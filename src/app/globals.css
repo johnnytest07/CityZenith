@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+/* MapLibre GL JS overrides */
+.maplibregl-map {
+  font-family: inherit;
+}
+
+.maplibregl-ctrl-attrib {
+  display: none;
+}
+
+/* Prevent default body margins */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background-color: #030712;
+}
+
+#__next,
+#root {
+  height: 100%;
+}
