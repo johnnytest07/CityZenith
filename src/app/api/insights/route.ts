@@ -84,10 +84,10 @@ export async function POST(request: NextRequest) {
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     generationConfig: {
       temperature: 0.3,
-      maxOutputTokens: 1024,
-      // Enable reasoning/thinking for supported models (e.g. gemini-2.5-pro, gemini-3.0-pro).
-      // Silently ignored by models that don't support it.
-      thinkingConfig: { thinkingBudget: 4096 },
+      // Thinking tokens count against maxOutputTokens on gemini-2.5-pro.
+      // Budget 2048 for thinking + ~512 for the actual bullet points = 8192 headroom.
+      maxOutputTokens: 8192,
+      thinkingConfig: { thinkingBudget: 2048 },
     },
   }
 
@@ -110,7 +110,11 @@ export async function POST(request: NextRequest) {
     }
 
     const data = await res.json()
-    const text: string = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
+    // When thinkingConfig is active, parts[0] is the reasoning block (thought: true)
+    // and the actual answer is in a later part. Skip thought parts to find the text.
+    const parts: Array<{ text?: string; thought?: boolean }> =
+      data?.candidates?.[0]?.content?.parts ?? []
+    const text: string = parts.find((p) => p.text && !p.thought)?.text ?? ''
 
     if (!text) {
       return NextResponse.json({ error: 'Gemini returned an empty response' }, { status: 502 })
