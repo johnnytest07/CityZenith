@@ -2,9 +2,9 @@
 export type RgbaColor = [number, number, number, number]
 
 export const DECISION_COLORS: Record<string, RgbaColor> = {
-  Approved: [34, 197, 94, 200],     // green-500
-  Refused: [239, 68, 68, 200],      // red-500
-  Undetermined: [156, 163, 175, 200], // grey-400
+  Approved: [34, 197, 94, 60],      // green-500, light wash
+  Refused: [239, 68, 68, 60],       // red-500, light wash
+  Undetermined: [156, 163, 175, 40], // grey-400, light wash
 }
 
 export const DECISION_STROKE_COLORS: Record<string, RgbaColor> = {

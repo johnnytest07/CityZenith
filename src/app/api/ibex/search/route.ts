@@ -23,6 +23,7 @@ export async function POST(request: NextRequest) {
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(20_000),
     })
 
     const data = await upstream.json()

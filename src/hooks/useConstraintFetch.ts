@@ -1,53 +1,47 @@
 import type { ConstraintType, StatutoryConstraints } from '@/types/constraints'
 import { CONSTRAINT_TYPES, emptyConstraints } from '@/types/constraints'
-import { bufferGeometry } from '@/lib/geometry'
 
 /**
- * Fetch all 4 statutory constraint types in parallel against the site geometry
- * + 100m buffer. Returns StatutoryConstraints with raw GeoJSON features.
+ * Fetch all 4 statutory constraint types in parallel.
  *
- * This is NOT a React hook — it's a plain async function called by useSiteSelection.
- * This avoids hook ordering issues and makes it easier to test.
+ * The caller is responsible for providing a pre-prepared constraintGeometry
+ * (typically a simple circle around the site centroid). This avoids running
+ * turf.buffer on complex building footprint polygons on the main thread, which
+ * was the primary cause of UI freezes when clicking on buildings.
+ *
+ * The server-side route extracts a bounding box from the geometry, so a simple
+ * circle is functionally equivalent to a buffered footprint for this purpose.
  */
 export async function fetchConstraintsForSite(
-  siteGeometry: GeoJSON.Geometry,
-  onProgress?: (type: ConstraintType, result: StatutoryConstraints[ConstraintType]) => void,
+  constraintGeometry: GeoJSON.Geometry,
+  signal?: AbortSignal,
 ): Promise<StatutoryConstraints> {
-  // Buffer site by 100m for constraint intersection
-  const buffered = bufferGeometry(siteGeometry, 0.1)
-  const intersectionGeometry = buffered ? buffered.geometry : siteGeometry
-
   const result = emptyConstraints()
 
-  // Fetch all 4 types in parallel
   await Promise.allSettled(
     CONSTRAINT_TYPES.map(async (constraintType) => {
       try {
         const res = await fetch('/api/constraints', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ constraintType, geometry: intersectionGeometry }),
-          signal: AbortSignal.timeout(15000),
+          body: JSON.stringify({ constraintType, geometry: constraintGeometry }),
+          signal,
         })
 
         if (!res.ok) {
           result[constraintType] = { intersects: false, features: null, isLoading: false }
-          onProgress?.(constraintType, result[constraintType])
           return
         }
 
         const geojson = await res.json() as GeoJSON.FeatureCollection
-        const intersects = geojson.features.length > 0
-
         result[constraintType] = {
-          intersects,
+          intersects: geojson.features.length > 0,
           features: geojson,
           isLoading: false,
         }
-        onProgress?.(constraintType, result[constraintType])
-      } catch {
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') return
         result[constraintType] = { intersects: false, features: null, isLoading: false }
-        onProgress?.(constraintType, result[constraintType])
       }
     }),
   )

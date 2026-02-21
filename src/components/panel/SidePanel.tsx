@@ -5,6 +5,7 @@ import { PlanningStats } from './PlanningStats'
 import { PrecedentList } from './PrecedentList'
 import { ConstraintsSummary } from './ConstraintsSummary'
 import { BuiltFormSummary } from './BuiltFormSummary'
+import { InsightsPanel } from './InsightsPanel'
 import { useSiteStore } from '@/stores/siteStore'
 
 /**
@@ -27,10 +28,11 @@ export function SidePanel() {
       )}
 
       <div className="flex-1 overflow-y-auto">
-        <PlanningStats />
         <PrecedentList />
         <ConstraintsSummary />
         <BuiltFormSummary />
+        <InsightsPanel />
+        <PlanningStats />
       </div>
     </div>
   )

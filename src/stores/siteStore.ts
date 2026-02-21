@@ -56,6 +56,8 @@ export const useSiteStore = create<SiteStore>((set) => ({
           queryRadiusM: 250,
         },
       },
+      // Set all loading states immediately so skeletons appear on first render
+      loadingStates: { precedent: true, stats: true, constraints: true, contextFeatures: false },
       error: null,
     }),
 
