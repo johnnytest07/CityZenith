@@ -9,6 +9,25 @@
   display: none;
 }
 
+/* Planning precedent map popup — dark theme override */
+.precedent-popup .maplibregl-popup-content {
+  background: rgba(9, 9, 19, 0.96) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 8px !important;
+  padding: 10px 12px !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6) !important;
+  color: #e4e4e7 !important;
+  font-family: system-ui, sans-serif !important;
+  font-size: 11px !important;
+  line-height: 1.5 !important;
+  max-width: 260px !important;
+}
+
+.precedent-popup .maplibregl-popup-tip {
+  border-top-color: rgba(255, 255, 255, 0.1) !important;
+  border-bottom-color: rgba(255, 255, 255, 0.1) !important;
+}
+
 /* Prevent default body margins */
 html,
 body {

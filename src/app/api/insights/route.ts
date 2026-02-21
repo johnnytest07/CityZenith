@@ -123,7 +123,7 @@ function buildPrompt(
     .join('\n')
 
   const outcomes = summary.planningStats.outcomeDistributions
-    .map((o) => `${o.decision}: ${o.count} (${o.percentage.toFixed(0)}%)`)
+    .map((o) => `${o.decision}: ${o.percentage.toFixed(0)}%`)
     .join(', ')
 
   const planContext = planChunks.length > 0

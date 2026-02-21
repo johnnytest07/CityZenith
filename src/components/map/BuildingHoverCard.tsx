@@ -10,13 +10,23 @@ import { useDevStore } from '@/stores/devStore'
  * moves from the 3D building to the card itself.
  */
 export function BuildingHoverCard() {
-  const { hoverInfo, buildRecommendation, switchAlternative, setHoverInfo } = useDevStore()
+  const {
+    hoverInfo,
+    buildRecommendation,
+    buildFootprintM2,
+    switchAlternative,
+    setHoverInfo,
+  } = useDevStore()
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   if (!hoverInfo || !buildRecommendation) return null
 
   const { primary, alternatives, activeIndex } = buildRecommendation
   const active = activeIndex === 0 ? primary : alternatives[activeIndex - 1]
+
+  // Display the actual drawn footprint area, falling back to LLM's value
+  const displayFootprint =
+    buildFootprintM2 != null ? Math.round(buildFootprintM2) : active.approxFootprintM2
 
   const scheduleHide = () => {
     hideTimerRef.current = setTimeout(() => {
@@ -50,7 +60,7 @@ export function BuildingHoverCard() {
         <p className="text-gray-400 text-xs mt-0.5">{active.style}</p>
         <div className="flex gap-3 mt-1.5 text-xs text-gray-500">
           <span>{active.storeys} storeys</span>
-          <span>{active.approxFootprintM2}m²</span>
+          <span>{displayFootprint}m²</span>
           <span>{active.approxHeightM.toFixed(1)}m</span>
         </div>
       </div>

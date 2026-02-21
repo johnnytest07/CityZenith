@@ -1,29 +1,35 @@
-'use client'
+"use client";
 
-import { useState } from 'react'
-import type { PlanningContextStats } from '@/types/ibex'
-import { useSiteStore } from '@/stores/siteStore'
-import { SectionCard } from './SectionCard'
+import { useState } from "react";
+import type { PlanningContextStats } from "@/types/ibex";
+import { useSiteStore } from "@/stores/siteStore";
+import { SectionCard } from "./SectionCard";
+import { InsightCallout } from "./InsightCallout";
 
 export function PlanningStats() {
-  const { siteContext, loadingStates, insightBullets } = useSiteStore()
-  const [expanded, setExpanded] = useState(false)
+  const { siteContext, loadingStates, insightBullets, insightLoading } =
+    useSiteStore();
+  const [expanded, setExpanded] = useState(false);
 
-  const insightBullet = insightBullets?.find((b) => b.category === 'council') ?? null
+  const insightBullet =
+    insightBullets?.find((b) => b.category === "council") ?? null;
 
-  const stats: PlanningContextStats | null = siteContext?.planningContextStats ?? null
+  const stats: PlanningContextStats | null =
+    siteContext?.planningContextStats ?? null;
 
   const councilName =
     siteContext?.planningPrecedentFeatures?.features.find(
       (f) => f.properties?.council_name,
-    )?.properties?.council_name ?? null
+    )?.properties?.council_name ?? null;
 
   if (loadingStates.stats) {
     return (
       <SectionCard
         title="Council Context"
         scope={councilName ?? undefined}
-        summary={<span className="text-xs text-gray-700 animate-pulse">Loading…</span>}
+        summary={
+          <span className="text-xs text-gray-700 animate-pulse">Loading…</span>
+        }
         expanded={expanded}
         onToggle={() => setExpanded((e) => !e)}
       >
@@ -39,7 +45,7 @@ export function PlanningStats() {
           </div>
         </div>
       </SectionCard>
-    )
+    );
   }
 
   if (!stats) {
@@ -47,21 +53,21 @@ export function PlanningStats() {
       <SectionCard
         title="Council Context"
         scope={councilName ?? undefined}
-        summary={<span className="text-xs text-gray-600">No data available</span>}
+        summary={
+          <span className="text-xs text-gray-600">No data available</span>
+        }
         expanded={expanded}
         onToggle={() => setExpanded((e) => !e)}
       >
         <p className="text-gray-600 text-xs mt-2">
           No statistical data available for this site.
         </p>
-        {insightBullet && (
-          <div className="mt-3 pt-3 border-t border-violet-900/40 flex gap-2">
-            <span className="text-violet-500 shrink-0 mt-0.5">✦</span>
-            <p className="text-xs text-violet-300 leading-relaxed">{insightBullet.text}</p>
-          </div>
-        )}
+        <InsightCallout
+          text={insightBullet?.text ?? null}
+          isLoading={insightLoading && !insightBullet}
+        />
       </SectionCard>
-    )
+    );
   }
 
   return (
@@ -116,7 +122,9 @@ export function PlanningStats() {
         {/* Approval / refusal rates */}
         {(stats.approval_rate != null || stats.refusal_rate != null) && (
           <div className="mb-4">
-            <p className="text-gray-600 text-xs uppercase tracking-wide mb-2">Outcome rates</p>
+            <p className="text-gray-600 text-xs uppercase tracking-wide mb-2">
+              Outcome rates
+            </p>
             <div className="space-y-1.5">
               {stats.approval_rate != null && (
                 <RateRow
@@ -177,15 +185,13 @@ export function PlanningStats() {
             </div>
           )}
 
-        {insightBullet && (
-          <div className="mt-3 pt-3 border-t border-violet-900/40 flex gap-2">
-            <span className="text-violet-500 shrink-0 mt-0.5">✦</span>
-            <p className="text-xs text-violet-300 leading-relaxed">{insightBullet.text}</p>
-          </div>
-        )}
+        <InsightCallout
+          text={insightBullet?.text ?? null}
+          isLoading={insightLoading && !insightBullet}
+        />
       </div>
     </SectionCard>
-  )
+  );
 }
 
 function RateRow({
@@ -194,17 +200,19 @@ function RateRow({
   color,
   textColor,
 }: {
-  label: string
-  value: number
-  color: string
-  textColor: string
+  label: string;
+  value: number;
+  color: string;
+  textColor: string;
 }) {
-  const pct = (value * 100).toFixed(1)
+  const pct = (value * 100).toFixed(1);
   return (
     <div>
       <div className="flex justify-between text-xs mb-1">
         <span className="text-gray-400">{label}</span>
-        <span className={`font-semibold tabular-nums ${textColor}`}>{pct}%</span>
+        <span className={`font-semibold tabular-nums ${textColor}`}>
+          {pct}%
+        </span>
       </div>
       <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
         <div
@@ -213,7 +221,7 @@ function RateRow({
         />
       </div>
     </div>
-  )
+  );
 }
 
 function CollapsibleList({
@@ -222,22 +230,29 @@ function CollapsibleList({
   renderValue,
   maxVisible,
 }: {
-  title: string
-  entries: [string, number][]
-  renderValue: (v: number) => string
-  maxVisible: number
+  title: string;
+  entries: [string, number][];
+  renderValue: (v: number) => string;
+  maxVisible: number;
 }) {
-  const [listExpanded, setListExpanded] = useState(false)
-  const visible = listExpanded ? entries : entries.slice(0, maxVisible)
-  const hidden = entries.length - maxVisible
+  const [listExpanded, setListExpanded] = useState(false);
+  const visible = listExpanded ? entries : entries.slice(0, maxVisible);
+  const hidden = entries.length - maxVisible;
 
   return (
     <div className="mb-4">
-      <p className="text-gray-600 text-xs uppercase tracking-wide mb-2">{title}</p>
+      <p className="text-gray-600 text-xs uppercase tracking-wide mb-2">
+        {title}
+      </p>
       <div className="space-y-1">
         {visible.map(([label, value]) => (
-          <div key={label} className="flex items-center justify-between gap-2 text-xs">
-            <span className="text-gray-400 truncate capitalize">{label.replace(/_/g, ' ')}</span>
+          <div
+            key={label}
+            className="flex items-center justify-between gap-2 text-xs"
+          >
+            <span className="text-gray-400 truncate capitalize">
+              {label.replace(/_/g, " ")}
+            </span>
             <span className="text-gray-200 tabular-nums font-medium flex-shrink-0">
               {renderValue(value)}
             </span>
@@ -249,9 +264,9 @@ function CollapsibleList({
           onClick={() => setListExpanded((e) => !e)}
           className="mt-1.5 text-xs text-gray-600 hover:text-gray-400 transition-colors"
         >
-          {listExpanded ? '↑ Show less' : `↓ ${hidden} more`}
+          {listExpanded ? "↑ Show less" : `↓ ${hidden} more`}
         </button>
       )}
     </div>
-  )
+  );
 }

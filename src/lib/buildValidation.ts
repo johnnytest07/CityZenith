@@ -1,4 +1,4 @@
-import { booleanPointInPolygon, point } from '@turf/turf'
+import { booleanPointInPolygon, booleanIntersects, area, centroid, polygon as turfPolygon, point } from '@turf/turf'
 import type { Map as MapLibreMap } from 'maplibre-gl'
 
 /**
@@ -24,6 +24,59 @@ export function isOnExistingBuilding(
     }
   }
   return false
+}
+
+/**
+ * Returns true if the given closed polygon ring intersects any building in the collection.
+ * polygonCoords must be a closed ring (first === last point).
+ */
+export function polygonIntersectsBuilding(
+  polygonCoords: [number, number][],
+  buildings: GeoJSON.FeatureCollection,
+): boolean {
+  const poly = turfPolygon([polygonCoords])
+  for (const feature of buildings.features) {
+    if (
+      feature.geometry.type === 'Polygon' ||
+      feature.geometry.type === 'MultiPolygon'
+    ) {
+      try {
+        if (booleanIntersects(poly, feature as GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>)) {
+          return true
+        }
+      } catch {
+        // skip malformed features
+      }
+    }
+  }
+  return false
+}
+
+/**
+ * Returns the area in m² of the polygon defined by the given nodes (open ring — do not repeat first point).
+ */
+export function calculatePolygonArea(nodes: [number, number][]): number {
+  if (nodes.length < 3) return 0
+  const closedRing = [...nodes, nodes[0]]
+  try {
+    return area(turfPolygon([closedRing]))
+  } catch {
+    return 0
+  }
+}
+
+/**
+ * Returns the centroid [lng, lat] of the polygon defined by the given nodes.
+ */
+export function calculatePolygonCentroid(nodes: [number, number][]): [number, number] {
+  if (nodes.length < 3) return nodes[0] ?? [0, 0]
+  const closedRing = [...nodes, nodes[0]]
+  try {
+    const c = centroid(turfPolygon([closedRing]))
+    return c.geometry.coordinates as [number, number]
+  } catch {
+    return nodes[0]
+  }
 }
 
 /**

@@ -1,13 +1,15 @@
 "use client";
 
-import { useRef, useCallback, useMemo } from "react";
+import { useRef, useCallback, useMemo, useEffect } from "react";
 import Map, {
+  Popup,
   type MapRef,
   type ViewStateChangeEvent,
   type MapLayerMouseEvent,
 } from "react-map-gl/maplibre";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+import { PolygonLayer, GeoJsonLayer } from "@deck.gl/layers";
 import { DeckOverlay } from "./DeckOverlay";
 import { useSiteStore } from "@/stores/siteStore";
 import { useMapStore } from "@/stores/mapStore";
@@ -17,10 +19,43 @@ import { createPlanningPrecedentLayer } from "./layers/PlanningPrecedentLayer";
 import { buildConstraintLayers } from "./layers/ConstraintIntersectionLayer";
 import { createSiteHighlightLayer } from "./layers/SiteHighlightLayer";
 import { createProposedBuildingLayer } from "./layers/ProposedBuildingLayer";
-import { isOnExistingBuilding, hasRoadAccess } from "@/lib/buildValidation";
+import { createDrawingLayers } from "./layers/DrawingLayer";
+import {
+  polygonIntersectsBuilding,
+  calculatePolygonArea,
+  calculatePolygonCentroid,
+  hasRoadAccess,
+} from "@/lib/buildValidation";
 import type { Layer, PickingInfo } from "@deck.gl/core";
 
 const MAPTILER_KEY = process.env.NEXT_PUBLIC_MAPTILER_KEY ?? "";
+
+/**
+ * Returns the [lng, lat] centre of a planning precedent feature.
+ * Buffered-centroid features carry lat/lng in properties; real polygon
+ * features use the geometric centroid of the outer ring.
+ */
+function getPrecedentCenter(
+  feature: GeoJSON.Feature,
+): [number, number] | null {
+  const p = feature.properties ?? {};
+  if (p.geometrySource === "buffered-centroid") {
+    const lng =
+      typeof p.longitude === "number" ? p.longitude : parseFloat(String(p.longitude ?? ""));
+    const lat =
+      typeof p.latitude === "number" ? p.latitude : parseFloat(String(p.latitude ?? ""));
+    if (!isNaN(lng) && !isNaN(lat)) return [lng, lat];
+  }
+  if (feature.geometry?.type === "Polygon") {
+    const coords = feature.geometry.coordinates[0] as [number, number][];
+    if (coords.length > 0) {
+      const lng = coords.reduce((s, c) => s + c[0], 0) / coords.length;
+      const lat = coords.reduce((s, c) => s + c[1], 0) / coords.length;
+      return [lng, lat];
+    }
+  }
+  return null;
+}
 
 const MAP_STYLE = MAPTILER_KEY
   ? `https://api.maptiler.com/maps/streets-v2/style.json?key=${MAPTILER_KEY}`
@@ -135,14 +170,22 @@ async function addCouncilBoundaries(map: MapLibreMap) {
 export function MapCanvas() {
   const mapRef = useRef<MapRef>(null);
   const { viewState, setViewState, setBounds } = useMapStore();
-  const { siteContext, insight, insightLoading } = useSiteStore();
+  const { siteContext, insight, insightLoading, hoveredPrecedentId } =
+    useSiteStore();
   const {
     buildMode,
     buildStep,
-    buildLocation,
     buildRecommendation,
+    polygonNodes,
+    cursorPosition,
+    buildPolygon,
+    pendingComplete,
     setBuildStep,
-    setBuildLocation,
+    addPolygonNode,
+    completePolygon,
+    setCursorPosition,
+    resetToPlace,
+    clearPendingComplete,
     setRecommendation,
     setBuildError,
     setRoadWarning,
@@ -231,127 +274,229 @@ export function MapCanvas() {
     [setViewState, setBounds],
   );
 
-  const handleClick = useCallback(
-    async (evt: MapLayerMouseEvent) => {
-      const { lngLat } = evt;
-      const point: [number, number] = [lngLat.lng, lngLat.lat];
+  // Mouse move — track cursor position for the ghost preview line during drawing
+  const handleMouseMove = useCallback(
+    (evt: MapLayerMouseEvent) => {
+      const { buildMode: mode, buildStep: step } = useDevStore.getState();
+      if (mode === "new" && step === "place") {
+        const { lngLat } = evt;
+        setCursorPosition([lngLat.lng, lngLat.lat]);
+      }
+    },
+    [setCursorPosition],
+  );
 
-      // Build New mode intercepts clicks during the 'place' step
-      if (buildMode === 'new' && buildStep === 'place') {
-        const map = mapLibreRef.current;
-        if (!map || !siteContext) return;
+  // Finish the polygon: validate, compute area, call the recommend API
+  const finishPolygon = useCallback(
+    async (nodes: [number, number][]) => {
+      if (nodes.length < 3 || !siteContext) return;
 
-        // Block placement on existing buildings
-        if (isOnExistingBuilding(point, siteContext.nearbyContextFeatures.buildings)) {
-          setBuildError('Cannot build on an existing structure');
-          return;
-        }
+      const closedRing = [...nodes, nodes[0]];
 
-        // Check road access (non-blocking — warns but does not prevent placement)
-        const roadFound = hasRoadAccess(map, point);
-        setRoadWarning(!roadFound);
-
-        setBuildLocation(point);
-        setBuildStep('loading');
-        setBuildError(null);
-
-        try {
-          const res = await fetch('/api/recommend', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ siteContext, location: point }),
-          });
-          const data = await res.json();
-          if (!res.ok) {
-            setBuildError(data.error ?? 'Recommendation failed');
-            setBuildStep('place');
-            return;
-          }
-          setRecommendation(data);
-          setBuildStep('result');
-        } catch (err) {
-          setBuildError(err instanceof Error ? err.message : 'Request failed');
-          setBuildStep('place');
-        }
-        return; // Do NOT call selectSite
+      // Block if polygon overlaps any existing building
+      if (
+        polygonIntersectsBuilding(
+          closedRing,
+          siteContext.nearbyContextFeatures.buildings,
+        )
+      ) {
+        setBuildError(
+          "Polygon overlaps an existing building — adjust your shape",
+        );
+        return;
       }
 
-      selectSite(point);
+      const areaM2 = calculatePolygonArea(nodes);
+      const centroidCoords = calculatePolygonCentroid(nodes);
+
+      // Road access check at centroid (non-blocking — warns but does not prevent)
+      const map = mapLibreRef.current;
+      if (map) {
+        setRoadWarning(!hasRoadAccess(map, centroidCoords));
+      }
+
+      completePolygon(closedRing, areaM2);
+      setBuildStep("loading");
+      setBuildError(null);
+
+      try {
+        const res = await fetch("/api/recommend", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            siteContext,
+            polygon: closedRing,
+            footprintM2: areaM2,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setBuildError(data.error ?? "Recommendation failed");
+          resetToPlace();
+          return;
+        }
+        setRecommendation(data);
+        setBuildStep("result");
+      } catch (err) {
+        setBuildError(err instanceof Error ? err.message : "Request failed");
+        resetToPlace();
+      }
     },
     [
-      buildMode,
-      buildStep,
       siteContext,
-      selectSite,
-      setBuildError,
-      setBuildLocation,
+      completePolygon,
       setBuildStep,
-      setRecommendation,
+      setBuildError,
       setRoadWarning,
+      setRecommendation,
+      resetToPlace,
     ],
   );
 
-  const getTooltip = useCallback((info: PickingInfo) => {
-    if (!info.object) return null
-    const layerId = info.layer?.id ?? ''
+  // Trigger finishPolygon when DevModePanel "Complete shape" button sets pendingComplete
+  useEffect(() => {
+    if (!pendingComplete) return;
+    clearPendingComplete();
+    const nodes = useDevStore.getState().polygonNodes;
+    if (nodes.length >= 3) {
+      void finishPolygon(nodes);
+    }
+  }, [pendingComplete, clearPendingComplete, finishPolygon]);
 
-    // Proposed building — hover card handles display; suppress deck.gl tooltip
-    if (layerId === 'proposed-building') return null
+  const handleClick = useCallback(
+    async (evt: MapLayerMouseEvent) => {
+      const { lngLat } = evt;
+      const clickPoint: [number, number] = [lngLat.lng, lngLat.lat];
 
-    // ── Planning precedent ──────────────────────────────────────
-    if (layerId === 'planning-precedent') {
-      const p = (info.object as GeoJSON.Feature).properties ?? {}
-      const decision: string = p.normalised_decision ?? 'Unknown'
-      const decisionColor = decision.toLowerCase().includes('approv')
-        ? '#4ade80'
-        : decision.toLowerCase().includes('refus') ? '#f87171' : '#9ca3af'
-      const proposal: string = (p.proposal ?? '').slice(0, 120)
-      const date: string = p.decision_date ?? p.received_date ?? ''
-      return {
-        html: `
+      // Read live state from store to avoid stale closure
+      const {
+        buildMode: mode,
+        buildStep: step,
+        polygonNodes: nodes,
+      } = useDevStore.getState();
+
+      if (mode === "new" && step === "place") {
+        // When ≥3 nodes, check if clicking near the first node to close the polygon
+        if (nodes.length >= 3) {
+          const map = mapLibreRef.current;
+          if (map) {
+            const firstNodeScreen = map.project(nodes[0]);
+            const clickScreen = map.project(clickPoint);
+            const dx = firstNodeScreen.x - clickScreen.x;
+            const dy = firstNodeScreen.y - clickScreen.y;
+            if (Math.sqrt(dx * dx + dy * dy) < 20) {
+              await finishPolygon(nodes);
+              return;
+            }
+          }
+        }
+
+        addPolygonNode(clickPoint);
+        return; // Do NOT call selectSite
+      }
+
+      selectSite(clickPoint);
+    },
+    [selectSite, addPolygonNode, finishPolygon],
+  );
+
+  const getTooltip = useCallback(
+    (info: PickingInfo) => {
+      if (!info.object) return null;
+      const layerId = info.layer?.id ?? "";
+
+      // Proposed building — hover card handles display; suppress deck.gl tooltip
+      if (layerId === "proposed-building") return null;
+
+      // ── Planning precedent ──────────────────────────────────────
+      // Layer IDs are planning-precedent-{slot} where slot ∈ undetermined|approved|refused
+      if (layerId.startsWith("planning-precedent-")) {
+        const p = (info.object as GeoJSON.Feature).properties ?? {};
+        const decision: string = p.normalised_decision ?? "Unknown";
+        const decisionColor = decision.toLowerCase().includes("approv")
+          ? "#4ade80"
+          : decision.toLowerCase().includes("refus")
+            ? "#f87171"
+            : "#9ca3af";
+        const proposal: string = (p.proposal ?? "").slice(0, 120);
+        const date: string = p.decided_date ?? "";
+
+        // ── Z-debug ──────────────────────────────────────────────
+        // Each slot has a fixed base polygonOffset + per-feature step.
+        // Draw order: undetermined (1st) → approved (2nd) → refused (3rd/top).
+        // Higher units offset = drawn later = visually on top when depthTest:false.
+        const slot = layerId.replace("planning-precedent-", "");
+        const SLOT_BASE_OFFSETS: Record<string, [number, number]> = {
+          undetermined: [0, 0],
+          approved: [-2, -500],
+          refused: [-4, -1000],
+        };
+        const SLOT_DRAW_ORDER: Record<string, string> = {
+          undetermined: "1st — bottommost",
+          approved: "2nd",
+          refused: "3rd — topmost (drawn last)",
+        };
+        const [bFactor, bUnits] = SLOT_BASE_OFFSETS[slot] ?? [0, 0];
+        const drawOrder = SLOT_DRAW_ORDER[slot] ?? "unknown";
+        const geomSource = p.geometrySource ?? "unknown";
+
+        return {
+          html: `
           <div style="font-family:system-ui;font-size:11px;color:#e4e4e7;line-height:1.5">
             <div style="font-weight:700;color:${decisionColor};margin-bottom:4px">${decision}</div>
-            <div style="color:#a1a1aa;margin-bottom:2px">${p.planning_reference ?? ''}</div>
-            <div style="margin-bottom:2px">${proposal}${(p.proposal ?? '').length > 120 ? '…' : ''}</div>
-            ${date ? `<div style="color:#71717a">${String(date).slice(0, 10)}</div>` : ''}
+            <div style="color:#a1a1aa;margin-bottom:2px">${p.planning_reference ?? ""}</div>
+            <div style="margin-bottom:4px">${proposal}${(p.proposal ?? "").length > 120 ? "…" : ""}</div>
+            ${date ? `<div style="color:#71717a;margin-bottom:6px">${String(date).slice(0, 10)}</div>` : ""}
+            <div style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(99,102,241,0.25)">
+              <div style="color:#6366f1;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px">⬛ z-index debug</div>
+              <div style="color:#818cf8;margin-bottom:2px">layer: <span style="color:#a5b4fc">${layerId}</span></div>
+              <div style="color:#818cf8;margin-bottom:2px">draw order: <span style="color:#a5b4fc">${drawOrder}</span></div>
+              <div style="color:#818cf8;margin-bottom:2px">polygonOffset: <span style="color:#a5b4fc">factor ${bFactor}, units ${bUnits}</span></div>
+              <div style="color:#818cf8">geometry: <span style="color:#a5b4fc">${geomSource}</span></div>
+            </div>
           </div>`,
-        style: {
-          background: 'rgba(15,15,25,0.92)',
-          borderRadius: '8px',
-          padding: '10px 12px',
-          border: '1px solid rgba(255,255,255,0.1)',
-          maxWidth: '260px',
-          pointerEvents: 'none',
-        },
+          style: {
+            background: "rgba(9,9,19,0.96)",
+            borderRadius: "8px",
+            padding: "10px 12px",
+            border: "1px solid rgba(99,102,241,0.35)",
+            maxWidth: "310px",
+            pointerEvents: "none",
+          },
+        };
       }
-    }
 
-    // ── Site highlight ──────────────────────────────────────────
-    if (layerId === 'site-highlight') {
-      const content = insightLoading
-        ? '<span style="color:#a78bfa">Analysing site…</span>'
-        : insight
-          ? insight.split('\n').find((l: string) => l.trim().startsWith('•'))?.slice(2) ?? insight.split('\n')[0]
-          : '<span style="color:#71717a">AI insights loading…</span>'
-      return {
-        html: `
+      // ── Site highlight ──────────────────────────────────────────
+      if (layerId === "site-highlight") {
+        const content = insightLoading
+          ? '<span style="color:#a78bfa">Analysing site…</span>'
+          : insight
+            ? (insight
+                .split("\n")
+                .find((l: string) => l.trim().startsWith("•"))
+                ?.slice(2) ?? insight.split("\n")[0])
+            : '<span style="color:#71717a">AI insights loading…</span>';
+        return {
+          html: `
           <div style="font-family:system-ui;font-size:11px;color:#e4e4e7;line-height:1.5">
             <div style="font-weight:700;color:#a78bfa;margin-bottom:6px">✦ Site Insight</div>
             <div>${content}</div>
           </div>`,
-        style: {
-          background: 'rgba(15,15,25,0.92)',
-          borderRadius: '8px',
-          padding: '10px 12px',
-          border: '1px solid rgba(139,92,246,0.3)',
-          maxWidth: '280px',
-          pointerEvents: 'none',
-        },
+          style: {
+            background: "rgba(15,15,25,0.92)",
+            borderRadius: "8px",
+            padding: "10px 12px",
+            border: "1px solid rgba(139,92,246,0.3)",
+            maxWidth: "280px",
+            pointerEvents: "none",
+          },
+        };
       }
-    }
 
-    return null
-  }, [insight, insightLoading])
+      return null;
+    },
+    [insight, insightLoading],
+  );
 
   const deckLayers = useMemo((): Layer[] => {
     if (!siteContext) return [];
@@ -361,12 +506,12 @@ export function MapCanvas() {
     // --- Statutory constraints (bottom) ---
     layers.push(...buildConstraintLayers(siteContext.statutoryConstraints));
 
-    // --- Site highlight and planning precedent circles (top) ---
+    // --- Site highlight and planning precedent circles ---
     layers.push(createSiteHighlightLayer(siteContext.siteGeometry));
 
     if (siteContext.planningPrecedentFeatures.features.length > 0) {
       layers.push(
-        createPlanningPrecedentLayer(
+        ...createPlanningPrecedentLayer(
           siteContext.planningPrecedentFeatures,
           (feature) => {
             const center =
@@ -382,21 +527,72 @@ export function MapCanvas() {
       );
     }
 
+    // --- Hover highlight for precedent hovered in the side panel ---
+    if (hoveredPrecedentId) {
+      const hoveredFeature = siteContext.planningPrecedentFeatures.features.find(
+        (f) => f.properties?.planning_reference === hoveredPrecedentId,
+      );
+      if (hoveredFeature) {
+        layers.push(
+          new GeoJsonLayer({
+            id: "precedent-hover-highlight",
+            data: {
+              type: "FeatureCollection",
+              features: [hoveredFeature],
+            },
+            stroked: true,
+            filled: true,
+            getFillColor: [255, 255, 255, 30],
+            getLineColor: [255, 255, 255, 210],
+            lineWidthMinPixels: 2.5,
+            parameters: { depthTest: false, depthMask: false },
+            pickable: false,
+          }),
+        );
+      }
+    }
+
+    // --- Drawing layer (polygon being placed) ---
+    if (buildMode === "new" && buildStep === "place" && polygonNodes.length > 0) {
+      layers.push(
+        ...createDrawingLayers(
+          polygonNodes,
+          cursorPosition,
+          polygonNodes.length >= 3,
+        ),
+      );
+    }
+
+    // --- Flat polygon preview while recommendation is loading ---
+    if (buildMode === "new" && buildStep === "loading" && buildPolygon) {
+      layers.push(
+        new PolygonLayer({
+          id: "proposed-building-loading",
+          data: [{ contour: buildPolygon }],
+          getPolygon: (d: { contour: [number, number][] }) => d.contour,
+          getFillColor: [139, 92, 246, 60],
+          getLineColor: [167, 139, 250, 180],
+          lineWidthMinPixels: 1.5,
+          extruded: false,
+          pickable: false,
+        }),
+      );
+    }
+
     // --- Proposed building (build new mode result) ---
-    if (buildStep === 'result' && buildLocation && buildRecommendation) {
+    if (buildStep === "result" && buildPolygon && buildRecommendation) {
       const { primary, alternatives, activeIndex } = buildRecommendation;
-      const activeOption = activeIndex === 0 ? primary : alternatives[activeIndex - 1];
+      const activeOption =
+        activeIndex === 0 ? primary : alternatives[activeIndex - 1];
       if (activeOption) {
         layers.push(
           createProposedBuildingLayer(
-            buildLocation,
-            activeOption,
+            buildPolygon,
+            activeOption.approxHeightM,
             (info: PickingInfo) => {
               if (info.picked) {
                 setHoverInfo({ x: info.x, y: info.y });
               } else {
-                // Trigger a delayed hide via store (BuildingHoverCard handles the delay)
-                // We signal no hover by scheduling hide — card onMouseLeave handles the timer
                 setHoverInfo(null);
               }
             },
@@ -406,23 +602,117 @@ export function MapCanvas() {
     }
 
     return layers;
-  }, [siteContext, selectSite, buildStep, buildLocation, buildRecommendation, setHoverInfo]);
+  }, [
+    siteContext,
+    selectSite,
+    buildMode,
+    buildStep,
+    buildPolygon,
+    buildRecommendation,
+    polygonNodes,
+    cursorPosition,
+    setHoverInfo,
+    hoveredPrecedentId,
+  ]);
 
-  const isBuildPlacing = buildMode === 'new' && buildStep === 'place';
+  // Compute the hovered precedent feature + its map centre for the Popup
+  const hoveredPrecedentFeature = hoveredPrecedentId
+    ? siteContext?.planningPrecedentFeatures.features.find(
+        (f) => f.properties?.planning_reference === hoveredPrecedentId,
+      ) ?? null
+    : null;
+  const hoveredPrecedentCenter = hoveredPrecedentFeature
+    ? getPrecedentCenter(hoveredPrecedentFeature)
+    : null;
+
+  const isBuildPlacing = buildMode === "new" && buildStep === "place";
 
   return (
-    <div style={{ width: "100%", height: "100%", position: "relative" }} className={isBuildPlacing ? "cursor-crosshair" : ""}>
+    <div
+      style={{ width: "100%", height: "100%", position: "relative" }}
+      className={isBuildPlacing ? "cursor-crosshair" : ""}
+    >
       <Map
         ref={mapRef}
         {...viewState}
         onMove={handleMove}
         onClick={handleClick}
+        onMouseMove={handleMouseMove}
         onLoad={handleMapLoad}
         mapStyle={MAP_STYLE}
         attributionControl={false}
         style={{ width: "100%", height: "100%" }}
       >
         <DeckOverlay layers={deckLayers} getTooltip={getTooltip} />
+
+        {/* Precedent hover popup — shown when a panel list item is hovered */}
+        {hoveredPrecedentCenter && hoveredPrecedentFeature && (() => {
+          const p = hoveredPrecedentFeature.properties ?? {};
+          const decision: string = p.normalised_decision ?? "";
+          const decisionColor = decision.toLowerCase().includes("approv")
+            ? "#4ade80"
+            : decision.toLowerCase().includes("refus")
+              ? "#f87171"
+              : "#9ca3af";
+          const proposal: string = (p.proposal ?? "").slice(0, 110);
+          const date: string = p.decided_date
+            ? new Date(p.decided_date).toLocaleDateString("en-GB", {
+                year: "numeric",
+                month: "short",
+                day: "numeric",
+              })
+            : "";
+          return (
+            <Popup
+              longitude={hoveredPrecedentCenter[0]}
+              latitude={hoveredPrecedentCenter[1]}
+              closeButton={false}
+              closeOnClick={false}
+              anchor="bottom"
+              offset={12}
+              className="precedent-popup"
+            >
+              <div>
+                {decision && (
+                  <div
+                    style={{
+                      fontWeight: 700,
+                      color: decisionColor,
+                      marginBottom: 4,
+                    }}
+                  >
+                    {decision}
+                  </div>
+                )}
+                <div
+                  style={{
+                    color: "#a1a1aa",
+                    fontFamily: "monospace",
+                    marginBottom: 3,
+                  }}
+                >
+                  {p.planning_reference}
+                </div>
+                {proposal && (
+                  <div style={{ color: "#d4d4d8", marginBottom: 3 }}>
+                    {proposal}
+                    {(p.proposal ?? "").length > 110 ? "…" : ""}
+                  </div>
+                )}
+                <div
+                  style={{ color: "#71717a", display: "flex", gap: 8 }}
+                >
+                  {date && <span>{date}</span>}
+                  {p.normalised_application_type && (
+                    <span style={{ color: "#52525b" }}>
+                      {p.normalised_application_type}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </Popup>
+          );
+        })()}
       </Map>
     </div>
   );
