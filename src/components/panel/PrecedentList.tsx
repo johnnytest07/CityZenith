@@ -12,10 +12,28 @@ export function PrecedentList() {
 
   if (loadingStates.precedent) {
     return (
-      <Section title="Planning Precedent">
+      <Section title="Site Applications" scope="100m radius">
+        {/* Summary stats bar skeleton */}
+        <div className="flex gap-3 mb-3">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="flex-1 bg-gray-800 rounded h-10 animate-pulse" />
+          ))}
+        </div>
+        {/* Card skeletons */}
         <div className="space-y-2">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="h-16 bg-gray-800 rounded animate-pulse" />
+            <div key={i} className="bg-gray-900 border border-gray-800 rounded-lg p-3 space-y-2 animate-pulse">
+              <div className="flex justify-between">
+                <div className="h-3 w-24 bg-gray-700 rounded" />
+                <div className="h-3 w-16 bg-gray-700 rounded" />
+              </div>
+              <div className="h-3 w-full bg-gray-800 rounded" />
+              <div className="h-3 w-2/3 bg-gray-800 rounded" />
+              <div className="flex gap-2">
+                <div className="h-3 w-20 bg-gray-700 rounded" />
+                <div className="h-3 w-14 bg-gray-700 rounded" />
+              </div>
+            </div>
           ))}
         </div>
       </Section>
@@ -26,7 +44,7 @@ export function PrecedentList() {
 
   if (features.length === 0) {
     return (
-      <Section title="Planning Precedent">
+      <Section title="Site Applications" scope="100m radius">
         <p className="text-gray-600 text-xs">No planning applications found for this site.</p>
       </Section>
     )
@@ -45,8 +63,8 @@ export function PrecedentList() {
     if (d.includes('approv')) approvedCount++
     else if (d.includes('refus') || d.includes('reject')) refusedCount++
 
-    if (f.properties?.decision_date) {
-      const dt = new Date(f.properties.decision_date)
+    if (f.properties?.decided_date) {
+      const dt = new Date(f.properties.decided_date)
       if (!isNaN(dt.getTime()) && dt >= twoYearsAgo) recentCount++
     }
   }
@@ -54,13 +72,13 @@ export function PrecedentList() {
 
   // Sort by decision_date desc
   const sorted = [...features].sort((a, b) => {
-    const da = a.properties?.decision_date ?? ''
-    const db = b.properties?.decision_date ?? ''
+    const da = a.properties?.decided_date ?? ''
+    const db = b.properties?.decided_date ?? ''
     return db.localeCompare(da)
   })
 
   return (
-    <Section title="Planning Precedent">
+    <Section title="Site Applications" scope="100m radius">
       {/* Render-time summary counts */}
       <div className="flex gap-3 mb-3 text-xs">
         <Stat label="Total" value={features.length} />
@@ -74,8 +92,8 @@ export function PrecedentList() {
           const p = feature.properties ?? {}
           const decision = p.normalised_decision ?? p.decision ?? null
           const isBuffered = p.geometrySource === 'buffered-centroid'
-          const decisionDate = p.decision_date
-            ? new Date(p.decision_date).toLocaleDateString('en-GB', {
+          const decisionDate = p.decided_date
+            ? new Date(p.decided_date).toLocaleDateString('en-GB', {
                 year: 'numeric', month: 'short', day: 'numeric',
               })
             : null
@@ -125,10 +143,15 @@ export function PrecedentList() {
   )
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, scope, children }: { title: string; scope?: string; children: React.ReactNode }) {
   return (
     <div className="p-4 border-b border-gray-800">
-      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">{title}</h3>
+      <div className="flex items-center gap-2 mb-3">
+        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{title}</h3>
+        {scope && (
+          <span className="text-xs text-gray-600 bg-gray-800 px-1.5 py-0.5 rounded">{scope}</span>
+        )}
+      </div>
       {children}
     </div>
   )

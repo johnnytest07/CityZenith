@@ -20,6 +20,7 @@ export function createConstraintOverlayLayer(
     stroked: true,
     filled: true,
     extruded: false,
+    parameters: { depthTest: false, depthMask: false },
 
     getFillColor: fillColor,
     getLineColor: strokeColor,

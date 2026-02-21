@@ -30,15 +30,23 @@ export function extractNearbyFeatures(
   const sw: [number, number] = [centerPx.x - pixelRadius, centerPx.y + pixelRadius]
   const ne: [number, number] = [centerPx.x + pixelRadius, centerPx.y - pixelRadius]
 
+  // Filter candidate layer names to only those that exist in the current style.
+  // queryRenderedFeatures throws if any named layer is absent.
+  const styleLayerIds = new Set(map.getStyle().layers.map((l) => l.id))
+  const existingLayers = (candidates: string[]) => candidates.filter((id) => styleLayerIds.has(id))
+
+  const buildingLayerIds = existingLayers(['building-3d', 'building', '3d-buildings'])
+  const landuseLayerIds = existingLayers(['landuse', 'landuse-overlay', 'land-use'])
+
   // Query building features
-  const buildingFeatures = map.queryRenderedFeatures([sw, ne], {
-    layers: ['building-3d', 'building', '3d-buildings'],
-  })
+  const buildingFeatures = buildingLayerIds.length > 0
+    ? map.queryRenderedFeatures([sw, ne], { layers: buildingLayerIds })
+    : []
 
   // Query land use features
-  const landuseFeatures = map.queryRenderedFeatures([sw, ne], {
-    layers: ['landuse', 'landuse-overlay', 'land-use'],
-  })
+  const landuseFeatures = landuseLayerIds.length > 0
+    ? map.queryRenderedFeatures([sw, ne], { layers: landuseLayerIds })
+    : []
 
   // Deduplicate by feature id (tiles can return the same feature multiple times)
   const dedupeFeatures = (features: maplibregl.MapGeoJSONFeature[]): GeoJSON.Feature[] => {

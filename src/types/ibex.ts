@@ -1,62 +1,70 @@
-export interface PolygonSearchRequest {
-  polygon: number[][]
-  srid: 27700
-  extensions?: string[]
-  filters?: Record<string, unknown>
-  page?: number
-  page_size?: number
+// IBEX /search request — matches SearchRequestSchema
+export interface SearchRequest {
+  input: {
+    srid: 27700
+    polygon: {
+      geometry: {
+        type: 'Polygon'
+        coordinates: number[][][]
+      }
+    }
+  }
+  extensions?: {
+    appeals?: boolean
+    centre_point?: boolean
+    heading?: boolean
+    project_type?: boolean
+    num_new_houses?: boolean
+    document_metadata?: boolean
+    proposed_unit_mix?: boolean
+    proposed_floor_area?: boolean
+    num_comments_received?: boolean
+  }
+  filters?: {
+    normalised_application_type?: string[]
+    project_type?: string[]
+    normalised_decision?: string[]
+    num_new_houses?: Record<string, unknown>
+  }
 }
 
+// IBEX /stats request — matches StatsRequestSchema (council-based, NOT polygon-based)
 export interface StatsRequest {
-  polygon: number[][]
-  srid: 27700
-  filters?: Record<string, unknown>
+  input: {
+    council_id: number
+    date_from: string  // YYYY-MM-DD
+    date_to: string    // YYYY-MM-DD
+  }
 }
 
+// Planning application as returned by IBEX /search
 export interface PlanningApplication {
   planning_reference: string
   proposal: string | null
-  decision: string | null
   normalised_decision: string | null
-  latitude: number | null
-  longitude: number | null
-  geometry: GeoJSONGeometryRaw | null
-  council_id: string | null
+  raw_decision: string | null
+  geometry: string | null          // WKT string in EPSG:27700, e.g. "POINT(528349 186246)"
+  centre_point: string | null      // WKT point in EPSG:27700 (requires centre_point extension)
+  council_id: number | null
+  council_name: string | null
   normalised_application_type: string | null
-  received_date: string | null
-  decision_date: string | null
+  application_date: string | null  // ISO date string
+  decided_date: string | null      // ISO date string
   classifications: string[] | null
   appeal_decision: string | null
   appeal_date: string | null
+  heading: string | null
+  num_new_houses: number | null
+  url: string | null
+  raw_address: string | null
 }
 
-// Raw geometry as returned by IBEX (may be OSGB or WGS84 depending on endpoint config)
-export interface GeoJSONGeometryRaw {
-  type: 'Point' | 'Polygon' | 'MultiPolygon' | 'LineString' | 'GeometryCollection'
-  coordinates: unknown
-}
-
-// IBEX StatsResponseSchema
+// IBEX /stats response — matches StatsResponseSchema
 export interface PlanningContextStats {
-  averageDecisionTime: AverageDecisionTime | null
-  numberOfApplications: NumberOfApplications | null
-  outcomeDistributions: OutcomeDistribution[] | null
-  developmentActivityLevel: string | null
-}
-
-export interface AverageDecisionTime {
-  days: number | null
-  weeks: number | null
-  byType?: Record<string, number>
-}
-
-export interface NumberOfApplications {
-  total: number
-  byType: Record<string, number>
-}
-
-export interface OutcomeDistribution {
-  decision: string
-  count: number
-  percentage: number
+  approval_rate: number | null
+  refusal_rate: number | null
+  average_decision_time: Record<string, number> | null  // keyed by project type, value in days
+  number_of_applications: Record<string, number> | null // keyed by application type
+  number_of_new_homes_approved: number | null
+  council_development_activity_level: string | null
 }
