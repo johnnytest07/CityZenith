@@ -1,0 +1,22 @@
+{
+  "name": "cityzenith-council-intelligence",
+  "version": "0.1.0",
+  "description": "Ingest local plan PDFs into a MongoDB vector store for semantic search",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "ingest": "tsx src/ingest.ts",
+    "query":  "tsx src/query.ts"
+  },
+  "dependencies": {
+    "dotenv":    "^16.4.5",
+    "mongodb":   "^6.12.0",
+    "pdf-parse": "^1.1.1"
+  },
+  "devDependencies": {
+    "@types/node":      "^22.0.0",
+    "@types/pdf-parse": "^1.1.4",
+    "tsx":              "^4.19.0",
+    "typescript":       "^5.7.0"
+  }
+}
