@@ -15,6 +15,7 @@ import { useSiteStore } from "@/stores/siteStore";
 import { useMapStore } from "@/stores/mapStore";
 import { useDevStore } from "@/stores/devStore";
 import { useIdentityStore } from "@/stores/identityStore";
+import { useCouncilStore } from "@/stores/councilStore";
 import { useSiteSelection } from "@/hooks/useSiteSelection";
 import { createPlanningPrecedentLayer } from "./layers/PlanningPrecedentLayer";
 import { buildConstraintLayers } from "./layers/ConstraintIntersectionLayer";
@@ -22,6 +23,7 @@ import { createSiteHighlightLayer } from "./layers/SiteHighlightLayer";
 import { createProposedBuildingLayer } from "./layers/ProposedBuildingLayer";
 import { createDrawingLayers } from "./layers/DrawingLayer";
 import { createMarketValueLayer } from "./layers/MarketValueLayer";
+import { createCouncilSuggestionLayers } from "./layers/CouncilSuggestionLayer";
 import { useMarketValue } from "@/hooks/useMarketValue";
 import {
   polygonIntersectsBuilding,
@@ -296,6 +298,13 @@ export function MapCanvas() {
 
   const { selectSite } = useSiteSelection(mapLibreRef);
   const { role, council } = useIdentityStore();
+  const {
+    suggestions: councilSuggestions,
+    selectedSuggestionId,
+    hoveredSuggestionId,
+    setSelectedSuggestion,
+    setHoveredSuggestion,
+  } = useCouncilStore();
 
   const handleMapLoad = useCallback(() => {
     const map = mapRef.current?.getMap();
@@ -516,6 +525,14 @@ export function MapCanvas() {
       const { lngLat } = evt;
       const clickPoint: [number, number] = [lngLat.lng, lngLat.lat];
 
+      // Council mode — deselect any active suggestion when clicking empty map space.
+      // Suggestion polygon clicks are handled by the deck.gl layer onClick (which returns true
+      // to stop propagation, so this handler won't fire for those clicks).
+      if (useIdentityStore.getState().role === "council") {
+        useCouncilStore.getState().setSelectedSuggestion(null)
+        return
+      }
+
       // Read live state from store to avoid stale closure
       const {
         buildMode: mode,
@@ -555,6 +572,29 @@ export function MapCanvas() {
 
       // Proposed building — hover card handles display; suppress deck.gl tooltip
       if (layerId === "proposed-building") return null;
+
+      // ── Council suggestion area ──────────────────────────────────
+      if (layerId === "council-suggestions-area") {
+        const props = (info.object as GeoJSON.Feature).properties ?? {};
+        const rationale: string = props.rationale ?? "";
+        const title: string = props.title ?? "";
+        if (!rationale && !title) return null;
+        return {
+          html: `
+          <div style="font-family:system-ui;font-size:11px;color:#e4e4e7;line-height:1.5">
+            <div style="font-weight:700;color:#a78bfa;margin-bottom:4px">${title}</div>
+            <div>${rationale}</div>
+          </div>`,
+          style: {
+            background: "rgba(15,15,25,0.92)",
+            borderRadius: "8px",
+            padding: "10px 12px",
+            border: "1px solid rgba(139,92,246,0.3)",
+            maxWidth: "260px",
+            pointerEvents: "none",
+          },
+        };
+      }
 
       // ── Market value hex ────────────────────────────────────────
       if (layerId === "market-value-hex") {
@@ -675,6 +715,22 @@ export function MapCanvas() {
 
   const deckLayers = useMemo((): Layer[] => {
     const layers: Layer[] = [];
+
+    // --- Council mode: render suggestion layers, skip all developer layers ---
+    if (role === "council") {
+      if (councilSuggestions.length > 0) {
+        layers.push(
+          ...createCouncilSuggestionLayers(
+            councilSuggestions,
+            selectedSuggestionId,
+            hoveredSuggestionId,
+            (id) => setSelectedSuggestion(selectedSuggestionId === id ? null : id),
+            (id) => setHoveredSuggestion(id),
+          ),
+        );
+      }
+      return layers;
+    }
 
     // --- Market value hex grid (bottom — beneath all other layers) ---
     if (marketValueEnabled && marketHexData) {
@@ -837,6 +893,12 @@ export function MapCanvas() {
     selectedAmenity,
     marketValueEnabled,
     marketHexData,
+    role,
+    councilSuggestions,
+    selectedSuggestionId,
+    hoveredSuggestionId,
+    setSelectedSuggestion,
+    setHoveredSuggestion,
   ]);
 
   // Popup shows for the panel-hovered precedent OR the map-clicked one.

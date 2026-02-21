@@ -1,0 +1,83 @@
+'use client'
+
+import { useCouncilStore } from '@/stores/councilStore'
+import { SuggestionCard } from './SuggestionCard'
+import type { CouncilSuggestion } from '@/types/council'
+
+interface CouncilPanelProps {
+  onFlyTo: (suggestion: CouncilSuggestion) => void
+}
+
+export function CouncilPanel({ onFlyTo }: CouncilPanelProps) {
+  const { stages, suggestions, isAnalysing, currentStageNum } = useCouncilStore()
+
+  const completedStages = stages.filter((s) => s.status === 'complete').length
+
+  // Sort by priority: high → medium → low
+  const priorityOrder = { high: 0, medium: 1, low: 2 }
+  const sorted = [...suggestions].sort(
+    (a, b) => (priorityOrder[a.priority] ?? 2) - (priorityOrder[b.priority] ?? 2),
+  )
+
+  const currentStageName = currentStageNum
+    ? stages.find((s) => s.stageNum === currentStageNum)?.name
+    : null
+
+  return (
+    <div className="flex flex-col h-full bg-gray-950 border-l border-gray-800">
+      {/* Header */}
+      <div className="shrink-0 px-4 py-3 border-b border-gray-800">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-bold text-white">AI Suggestions</h2>
+          <span className="text-xs text-gray-500">{completedStages}/10 stages</span>
+        </div>
+
+        {/* Progress bar */}
+        <div className="mt-2 h-1 bg-gray-800 rounded-full overflow-hidden">
+          <div
+            className="h-full bg-indigo-500 rounded-full transition-all duration-500"
+            style={{ width: `${(completedStages / 10) * 100}%` }}
+          />
+        </div>
+
+        {/* Current stage indicator */}
+        {isAnalysing && currentStageName && (
+          <p className="mt-1.5 text-[11px] text-indigo-400 flex items-center gap-1.5">
+            <span className="block w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse shrink-0" />
+            {currentStageName}
+          </p>
+        )}
+      </div>
+
+      {/* Suggestion list */}
+      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2">
+        {sorted.length === 0 && isAnalysing && (
+          <div className="flex flex-col items-center justify-center h-32 text-gray-600">
+            <span className="block w-5 h-5 rounded-full border-2 border-indigo-600 border-t-transparent animate-spin mb-2" />
+            <p className="text-xs">Generating suggestions…</p>
+          </div>
+        )}
+
+        {sorted.length === 0 && !isAnalysing && (
+          <div className="flex flex-col items-center justify-center h-32 text-gray-600">
+            <p className="text-xs text-center">No suggestions yet.<br />Click "Ask for Suggestions" to begin.</p>
+          </div>
+        )}
+
+        {sorted.map((s) => (
+          <SuggestionCard key={s.id} suggestion={s} onFlyTo={onFlyTo} />
+        ))}
+      </div>
+
+      {/* Footer summary */}
+      {suggestions.length > 0 && (
+        <div className="shrink-0 px-4 py-2 border-t border-gray-800 bg-gray-950">
+          <p className="text-[11px] text-gray-600">
+            {suggestions.length} suggestion{suggestions.length !== 1 ? 's' : ''} across{' '}
+            {completedStages} stage{completedStages !== 1 ? 's' : ''}
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
