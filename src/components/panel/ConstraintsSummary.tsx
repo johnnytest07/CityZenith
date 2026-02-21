@@ -22,8 +22,14 @@ export function ConstraintsSummary() {
     return (
       <Section title="Statutory Constraints">
         <div className="space-y-2">
-          {[1, 2].map((i) => (
-            <div key={i} className="h-10 bg-gray-800 rounded animate-pulse" />
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="flex items-center gap-3 border border-gray-800 rounded-lg px-3 py-2 animate-pulse">
+              <div className="w-2 h-2 rounded-full bg-gray-700 flex-shrink-0" />
+              <div className="flex-1 space-y-1">
+                <div className="h-3 bg-gray-700 rounded" style={{ width: `${40 + i * 12}%` }} />
+                <div className="h-2.5 w-24 bg-gray-800 rounded" />
+              </div>
+            </div>
           ))}
         </div>
       </Section>

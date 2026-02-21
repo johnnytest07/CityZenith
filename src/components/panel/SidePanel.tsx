@@ -28,11 +28,11 @@ export function SidePanel() {
       )}
 
       <div className="flex-1 overflow-y-auto">
-        <PlanningStats />
         <PrecedentList />
         <ConstraintsSummary />
         <BuiltFormSummary />
         <InsightsPanel />
+        <PlanningStats />
       </div>
     </div>
   )

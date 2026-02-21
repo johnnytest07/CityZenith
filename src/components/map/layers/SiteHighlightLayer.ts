@@ -17,6 +17,7 @@ export function createSiteHighlightLayer(siteGeometry: GeoJSON.Geometry) {
     stroked: true,
     filled: true,
     extruded: false,
+    parameters: { depthTest: false },
 
     getFillColor: [255, 255, 255, 25],
     getLineColor: [250, 204, 21, 255],    // yellow-400
