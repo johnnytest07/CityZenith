@@ -43,14 +43,14 @@ function computeHighValueTags(proposal: string | null): string[] {
 }
 
 function computeDecisionSpeedDays(
-  receivedDate: string | null,
-  decisionDate: string | null,
+  applicationDate: string | null,
+  decidedDate: string | null,
 ): number | null {
-  if (!receivedDate || !decisionDate) return null
-  const received = Date.parse(receivedDate)
-  const decided = Date.parse(decisionDate)
-  if (isNaN(received) || isNaN(decided)) return null
-  return Math.round((decided - received) / 86_400_000)
+  if (!applicationDate || !decidedDate) return null
+  const submitted = Date.parse(applicationDate)
+  const decided = Date.parse(decidedDate)
+  if (isNaN(submitted) || isNaN(decided)) return null
+  return Math.round((decided - submitted) / 86_400_000)
 }
 
 /**
@@ -64,7 +64,7 @@ export function enrichApplication(app: PlanningApplication): DeveloperMetrics {
     complexityScore: computeComplexityScore(app.normalised_application_type, app.proposal),
     isHighValue: highValueTags.length > 0,
     highValueTags,
-    decisionSpeedDays: computeDecisionSpeedDays(app.received_date, app.decision_date),
+    decisionSpeedDays: computeDecisionSpeedDays(app.application_date, app.decided_date),
   }
 }
 
@@ -100,14 +100,8 @@ function parseWktOsgb(wkt: string | null): GeoJSON.Geometry | null {
  * Normalise an array of IBEX PlanningApplication objects into a uniform
  * GeoJSON FeatureCollection where EVERY feature is a polygon.
  *
- * Rules:
- *  - If app.geometry is a WKT polygon → use it directly
- *  - If app.geometry is a WKT point → buffer 50m
- *  - If no geometry but centre_point extension is present → buffer 50m
- *  - If no usable geometry → skip
- *
- * All original PlanningApplication properties are preserved in feature.properties
- * plus `geometrySource` indicating how the polygon was derived.
+ * All original application properties are preserved in feature.properties
+ * including the new extension fields (unit mix, floor area, appeals, etc.).
  */
 export function normaliseApplicationsToFeatures(
   applications: PlanningApplication[],
@@ -129,12 +123,10 @@ export function normaliseApplicationsToFeatures(
         }
         geometrySource = 'application-geometry'
       } else if (parsedGeom.type === 'Point') {
-        // IBEX returned a point geometry — buffer it to a 15m circle
         polygon = bufferCentroid(parsedGeom.coordinates as [number, number], 0.015)
         geometrySource = 'buffered-centroid'
       }
     } else if (app.centre_point) {
-      // Fallback: use the centre_point extension field if main geometry is absent
       const centreGeom = parseWktOsgb(app.centre_point)
       if (centreGeom?.type === 'Point') {
         polygon = bufferCentroid(centreGeom.coordinates as [number, number], 0.015)
@@ -142,29 +134,86 @@ export function normaliseApplicationsToFeatures(
       }
     }
 
-    if (!polygon) continue // no usable geometry — skip
+    if (!polygon) continue
+
+    // For buffered-centroid features, extract and store lat/lng so MapCanvas
+    // can place popups at the original address rather than the polygon centroid.
+    let latitude: number | null = null
+    let longitude: number | null = null
+    if (geometrySource === 'buffered-centroid') {
+      const centreWkt = parsedGeom?.type === 'Point'
+        ? app.geometry
+        : app.centre_point
+      const centreGeom = parseWktOsgb(centreWkt ?? null)
+      if (centreGeom?.type === 'Point') {
+        ;[longitude, latitude] = centreGeom.coordinates as [number, number]
+      }
+    }
+
+    const metrics = enrichApplication(app)
+
+    // Appeals: extract the first appeal outcome for quick access on the map
+    const firstAppeal = app.appeals?.[0] ?? null
+
+    // Unit mix: flatten key counts for use in panel without JSON.parse
+    const unitMix = app.proposed_unit_mix
+    const totalUnits = unitMix?.total_proposed_residential_units ?? null
+    const affordableUnits = unitMix?.proposed_affordable_units ?? unitMix?.affordable_housing_units ?? null
+    const bed1 = unitMix?.proposed_1_bed_units ?? null
+    const bed2 = unitMix?.proposed_2_bed_units ?? null
+    const bed3 = unitMix?.proposed_3_bed_units ?? null
+    const bed4plus = unitMix?.proposed_4_plus_bed_units ?? null
 
     const feature: GeoJSON.Feature = {
       type: 'Feature',
       geometry: polygon.geometry,
       properties: {
+        // Core identifiers
         planning_reference: app.planning_reference,
-        proposal: app.proposal,
-        normalised_decision: app.normalised_decision,
-        raw_decision: app.raw_decision,
+        url: app.url,
+        raw_address: app.raw_address,
         council_id: app.council_id,
         council_name: app.council_name,
+
+        // Application details
+        proposal: app.proposal,
         normalised_application_type: app.normalised_application_type,
         application_date: app.application_date,
         decided_date: app.decided_date,
-        classifications: app.classifications ? JSON.stringify(app.classifications) : null,
-        appeal_decision: app.appeal_decision,
-        appeal_date: app.appeal_date,
+        normalised_decision: app.normalised_decision,
+        raw_decision: app.raw_decision,
+
+        // Extensions
         heading: app.heading,
+        project_type: app.project_type,
         num_new_houses: app.num_new_houses,
-        url: app.url,
-        raw_address: app.raw_address,
+        num_comments_received: app.num_comments_received,
+
+        // Unit mix (flattened for direct property access)
+        unit_total: totalUnits,
+        unit_affordable: affordableUnits,
+        unit_1bed: bed1,
+        unit_2bed: bed2,
+        unit_3bed: bed3,
+        unit_4plus: bed4plus,
+
+        // Floor area
+        floor_area_added_sqm: app.proposed_floor_area?.gross_internal_area_to_add_sqm ?? null,
+        floor_area_proposed_sqm: app.proposed_floor_area?.proposed_gross_floor_area_sqm ?? null,
+
+        // Appeal outcome
+        appeal_decision: firstAppeal?.decision ?? null,
+        appeal_date: firstAppeal?.decision_date ?? null,
+        appeal_ref: firstAppeal?.appeal_ref ?? null,
+        appeal_case_type: firstAppeal?.case_type ?? null,
+
+        // Developer metrics (computed at normalisation time — intentional exception to raw-evidence rule)
+        developer_metrics: metrics,
+
+        // Geometry metadata
         geometrySource,
+        latitude,
+        longitude,
       },
     }
 

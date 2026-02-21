@@ -9,7 +9,7 @@ import Map, {
 } from "react-map-gl/maplibre";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { PolygonLayer, GeoJsonLayer } from "@deck.gl/layers";
+import { PolygonLayer, GeoJsonLayer, ScatterplotLayer, PathLayer } from "@deck.gl/layers";
 import { DeckOverlay } from "./DeckOverlay";
 import { useSiteStore } from "@/stores/siteStore";
 import { useMapStore } from "@/stores/mapStore";
@@ -56,6 +56,23 @@ function getPrecedentCenter(feature: GeoJSON.Feature): [number, number] | null {
       const lat = coords.reduce((s, c) => s + c[1], 0) / coords.length;
       return [lng, lat];
     }
+  }
+  return null;
+}
+
+/** Extract the [lng, lat] centroid of a GeoJSON Geometry. */
+function getSiteGeometryCentre(geometry: GeoJSON.Geometry): [number, number] | null {
+  if (geometry.type === "Polygon" && geometry.coordinates[0].length > 0) {
+    const ring = geometry.coordinates[0] as [number, number][];
+    const lng = ring.reduce((s, c) => s + c[0], 0) / ring.length;
+    const lat = ring.reduce((s, c) => s + c[1], 0) / ring.length;
+    return [lng, lat];
+  }
+  if (geometry.type === "MultiPolygon" && geometry.coordinates[0]?.[0]?.length > 0) {
+    const ring = geometry.coordinates[0][0] as [number, number][];
+    const lng = ring.reduce((s, c) => s + c[0], 0) / ring.length;
+    const lat = ring.reduce((s, c) => s + c[1], 0) / ring.length;
+    return [lng, lat];
   }
   return null;
 }
@@ -249,6 +266,7 @@ export function MapCanvas() {
     hoveredPrecedentId,
     selectedPrecedentId,
     setSelectedPrecedentId,
+    selectedAmenity,
   } = useSiteStore();
   const {
     buildMode,
@@ -282,13 +300,31 @@ export function MapCanvas() {
 
     // --- 3D buildings ---
     if (!map.getLayer("3d-buildings")) {
-      const styleLayers = map.getStyle().layers;
+      const style = map.getStyle();
+      const styleLayers = style.layers;
 
+      // streets-v2: a layer already renders building footprints — reuse its source.
+      // hybrid/satellite: no building layer exists in the style (satellite imagery
+      // already shows rooftops, so MapTiler omits the 2D fill), but the vector
+      // overlay source still contains building footprint data. Fall back to the
+      // first vector source found in the style.
       const existingBuildingLayer = styleLayers.find(
-        (l) => "source-layer" in l && l["source-layer"] === "building",
+        (l) => "source-layer" in l && (l as { "source-layer": string })["source-layer"] === "building",
       ) as { source: string } | undefined;
 
-      if (existingBuildingLayer) {
+      let buildingSource: string | undefined = existingBuildingLayer?.source;
+
+      if (!buildingSource) {
+        const sources = style.sources as Record<string, { type: string }>;
+        for (const [id, src] of Object.entries(sources)) {
+          if (src.type === "vector") {
+            buildingSource = id;
+            break;
+          }
+        }
+      }
+
+      if (buildingSource) {
         const firstSymbolLayerId = styleLayers.find(
           (l) => l.type === "symbol",
         )?.id;
@@ -297,7 +333,7 @@ export function MapCanvas() {
           map.addLayer(
             {
               id: "3d-buildings",
-              source: existingBuildingLayer.source,
+              source: buildingSource,
               "source-layer": "building",
               type: "fill-extrusion",
               minzoom: 13,
@@ -357,6 +393,18 @@ export function MapCanvas() {
     );
     return () => clearTimeout(timer);
   }, [role, council]);
+
+  // Fly to selected amenity location when the user clicks a connectivity row
+  useEffect(() => {
+    if (!selectedAmenity) return;
+    const map = mapLibreRef.current;
+    if (!map) return;
+    map.flyTo({
+      center: [selectedAmenity.lng, selectedAmenity.lat],
+      zoom: 16,
+      duration: 900,
+    });
+  }, [selectedAmenity]);
 
   const handleMove = useCallback(
     (evt: ViewStateChangeEvent) => {
@@ -696,6 +744,47 @@ export function MapCanvas() {
       }
     }
 
+    // --- Amenity marker + path line ---
+    if (selectedAmenity) {
+      const siteCentre = getSiteGeometryCentre(siteContext.siteGeometry);
+      if (siteCentre) {
+        layers.push(
+          new PathLayer({
+            id: "amenity-path",
+            data: [
+              {
+                path: [
+                  siteCentre,
+                  [selectedAmenity.lng, selectedAmenity.lat] as [number, number],
+                ],
+              },
+            ],
+            getPath: (d: { path: [number, number][] }) => d.path,
+            getColor: [139, 92, 246, 110],
+            getWidth: 2,
+            widthUnits: "pixels",
+            pickable: false,
+            parameters: { depthTest: false },
+          }),
+        );
+      }
+      layers.push(
+        new ScatterplotLayer({
+          id: "amenity-marker",
+          data: [selectedAmenity],
+          getPosition: (d: typeof selectedAmenity) => [d.lng, d.lat],
+          getFillColor: [139, 92, 246, 230],
+          getLineColor: [255, 255, 255, 200],
+          getRadius: 8,
+          radiusUnits: "pixels",
+          stroked: true,
+          lineWidthMinPixels: 2,
+          pickable: false,
+          parameters: { depthTest: false },
+        }),
+      );
+    }
+
     return layers;
   }, [
     siteContext,
@@ -709,6 +798,7 @@ export function MapCanvas() {
     cursorPosition,
     setHoverInfo,
     hoveredPrecedentId,
+    selectedAmenity,
   ]);
 
   // Popup shows for the panel-hovered precedent OR the map-clicked one.

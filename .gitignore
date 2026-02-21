@@ -5,3 +5,5 @@ node_modules
 
 # Local plan PDFs (large binary files — store externally)
 *.pdf
+
+scripts/

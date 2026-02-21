@@ -28,6 +28,12 @@ const CATEGORY_CONFIG = {
     ring:  'border-violet-800/60',
     badge: 'text-violet-400 bg-violet-950/60',
   },
+  connectivity: {
+    label: 'Connectivity',
+    icon:  '🚆',
+    ring:  'border-sky-800/60',
+    badge: 'text-sky-400 bg-sky-950/60',
+  },
 } as const
 
 const PRIORITY_DOT: Record<string, string> = {

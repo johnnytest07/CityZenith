@@ -1,9 +1,19 @@
-import type { SearchRequest, StatsRequest, PlanningApplication, PlanningContextStats } from '@/types/ibex'
+import type {
+  SearchRequest,
+  StatsRequest,
+  ApplicationsRequest,
+  PlanningApplication,
+  PlanningContextStats,
+  CouncilPipeline,
+  CouncilPipelineItem,
+} from '@/types/ibex'
+
+/** Councils we have full pipeline data enabled for. */
+const PIPELINE_COUNCIL_IDS = new Set([25, 24]) // Royal Greenwich, Enfield
 
 /**
  * POST to the server-side IBEX search proxy.
- * Sends polygon coordinates (EPSG:27700) using the correct SearchRequestSchema format.
- * Accepts an AbortSignal to cancel the request when the user selects a new site.
+ * Requests all available extensions for the richest possible feature set.
  */
 export async function searchByPolygon(
   polygon27700: number[][],
@@ -23,7 +33,12 @@ export async function searchByPolygon(
       appeals: true,
       centre_point: true,
       heading: true,
+      project_type: true,
       num_new_houses: true,
+      num_comments_received: true,
+      proposed_unit_mix: true,
+      proposed_floor_area: true,
+      document_metadata: true,
     },
     filters: {},
   }
@@ -46,9 +61,7 @@ export async function searchByPolygon(
 
 /**
  * POST to the server-side IBEX stats proxy.
- * Requires a council_id (numeric) extracted from search results.
- * Returns PlanningContextStats as-is from IBEX.
- * Accepts an AbortSignal to cancel the request when the user selects a new site.
+ * Returns 5-year council-level stats.
  */
 export async function getStats(
   councilId: number,
@@ -80,4 +93,81 @@ export async function getStats(
   }
 
   return res.json()
+}
+
+/**
+ * Returns true if we support full pipeline fetching for this council.
+ * Prevents unnecessary API calls for councils we don't have data for.
+ */
+export function isPipelineCouncil(councilId: number): boolean {
+  return PIPELINE_COUNCIL_IDS.has(councilId)
+}
+
+/**
+ * Fetch council-wide approved residential pipeline via IBEX /applications.
+ * Only called for supported councils (Royal Greenwich, Enfield).
+ * Returns approved schemes with ≥1 new home decided in the last 2 years.
+ */
+export async function fetchCouncilPipeline(
+  councilId: number,
+  signal?: AbortSignal,
+): Promise<CouncilPipeline> {
+  const today = new Date().toISOString().slice(0, 10)
+  const twoYearsAgo = new Date(Date.now() - 2 * 365.25 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10)
+
+  const body: ApplicationsRequest = {
+    input: {
+      council_id: [councilId],
+      date_from: twoYearsAgo,
+      date_to: today,
+      date_range_type: 'decided',
+      page_size: 500,
+    },
+    extensions: {
+      project_type: true,
+      heading: true,
+      num_new_houses: true,
+      proposed_unit_mix: true,
+      proposed_floor_area: true,
+    },
+    filters: {
+      normalised_decision: ['Approved'],
+      num_new_houses: { min: 1 },
+    },
+  }
+
+  const res = await fetch('/api/ibex/applications', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal,
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`IBEX applications failed (${res.status}): ${text}`)
+  }
+
+  const raw = await res.json()
+  const apps: PlanningApplication[] = Array.isArray(raw) ? raw : []
+
+  const applications: CouncilPipelineItem[] = apps.map((a) => ({
+    planning_reference: a.planning_reference,
+    heading: a.heading ?? null,
+    proposal: a.proposal,
+    decided_date: a.decided_date,
+    project_type: a.project_type ?? null,
+    num_new_houses: a.num_new_houses ?? null,
+    proposed_unit_mix: a.proposed_unit_mix ?? null,
+    proposed_floor_area: a.proposed_floor_area ?? null,
+  }))
+
+  return {
+    councilId,
+    councilName: apps[0]?.council_name ?? 'Unknown Council',
+    fetchedAt: new Date().toISOString(),
+    applications,
+  }
 }
