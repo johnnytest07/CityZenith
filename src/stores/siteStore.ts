@@ -20,6 +20,12 @@ interface SiteStore {
   insightBullets: InsightBullet[] | null
 
   /**
+   * planning_reference of the precedent card currently hovered in the side panel.
+   * MapCanvas reads this to render a highlight + Popup on the map.
+   */
+  hoveredPrecedentId: string | null
+
+  /**
    * Initialise a new SiteContext with siteId + siteGeometry.
    * Called at the start of site selection to open the panel immediately.
    */
@@ -42,6 +48,8 @@ interface SiteStore {
   setInsightError: (error: string | null) => void
   setInsightBullets: (bullets: InsightBullet[]) => void
   clearInsight: () => void
+
+  setHoveredPrecedentId: (id: string | null) => void
 }
 
 const DEFAULT_LOADING: SiteLoadingStates = {
@@ -59,6 +67,7 @@ export const useSiteStore = create<SiteStore>((set) => ({
   insightLoading: false,
   insightError: null,
   insightBullets: null,
+  hoveredPrecedentId: null,
 
   initialiseSiteContext: (siteId, siteGeometry) =>
     set({
@@ -77,6 +86,13 @@ export const useSiteStore = create<SiteStore>((set) => ({
       // Set all loading states immediately so skeletons appear on first render
       loadingStates: { precedent: true, stats: true, constraints: true, contextFeatures: false },
       error: null,
+      // Always reset AI insights on every new site selection so the panel
+      // re-generates for the new site's evidence rather than showing stale results.
+      insight: null,
+      insightLoading: false,
+      insightError: null,
+      insightBullets: null,
+      hoveredPrecedentId: null,
     }),
 
   updateSiteContext: (partial) =>
@@ -96,6 +112,7 @@ export const useSiteStore = create<SiteStore>((set) => ({
       insightLoading: false,
       insightError: null,
       insightBullets: null,
+      hoveredPrecedentId: null,
     }),
 
   setLoading: (source, loading) =>
@@ -110,4 +127,6 @@ export const useSiteStore = create<SiteStore>((set) => ({
   setInsightError: (error) => set({ insightError: error }),
   setInsightBullets: (bullets) => set({ insightBullets: bullets }),
   clearInsight: () => set({ insight: null, insightLoading: false, insightError: null, insightBullets: null }),
+
+  setHoveredPrecedentId: (id) => set({ hoveredPrecedentId: id }),
 }))

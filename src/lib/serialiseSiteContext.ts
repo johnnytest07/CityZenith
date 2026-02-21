@@ -32,6 +32,8 @@ export interface SerialisedSiteContext {
   nearbyContext: {
     buildingCount: number
     landUseTypes: string[]
+    heightStats: { min: number; max: number; mean: number; median: number } | null
+    queryRadiusM: number
   }
 }
 
@@ -82,18 +84,58 @@ export function serialiseSiteContext(ctx: SiteContext): SerialisedSiteContext {
     ),
   ]
 
+  const buildingHeights: number[] = ctx.nearbyContextFeatures.buildings.features
+    .map((f) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const p = (f.properties ?? {}) as Record<string, any>
+      const h = p.render_height ?? p.height ?? p.building_height
+      const n = typeof h === 'number' ? h : typeof h === 'string' ? parseFloat(h) : NaN
+      return n
+    })
+    .filter((h) => !isNaN(h) && h > 0)
+    .sort((a, b) => a - b)
+
+  const heightStats = buildingHeights.length > 0
+    ? {
+        min:    Math.round(buildingHeights[0] * 10) / 10,
+        max:    Math.round(buildingHeights[buildingHeights.length - 1] * 10) / 10,
+        mean:   Math.round((buildingHeights.reduce((s, h) => s + h, 0) / buildingHeights.length) * 10) / 10,
+        median: Math.round(buildingHeights[Math.floor(buildingHeights.length / 2)] * 10) / 10,
+      }
+    : null
+
+  // ── Council stats — map snake_case IBEX fields to serialised shape ──────
+  const totalApplications = stats?.number_of_applications
+    ? Object.values(stats.number_of_applications).reduce((sum, n) => sum + n, 0)
+    : 0
+
+  const outcomeDistributions: Array<{ decision: string; count: number; percentage: number }> = []
+  if (stats?.approval_rate != null)
+    outcomeDistributions.push({ decision: 'Approved', count: 0, percentage: stats.approval_rate * 100 })
+  if (stats?.refusal_rate != null)
+    outcomeDistributions.push({ decision: 'Refused', count: 0, percentage: stats.refusal_rate * 100 })
+
+  const averageDecisionTimeDays: number | null = (() => {
+    if (!stats?.average_decision_time) return null
+    const values = Object.values(stats.average_decision_time)
+    if (values.length === 0) return null
+    return Math.round(values.reduce((s, v) => s + v, 0) / values.length)
+  })()
+
   return {
     planningStats: {
-      totalApplications:    stats?.numberOfApplications?.total ?? 0,
-      outcomeDistributions: stats?.outcomeDistributions ?? [],
-      averageDecisionTimeDays: stats?.averageDecisionTime?.days ?? null,
-      activityLevel:        stats?.developmentActivityLevel ?? null,
+      totalApplications,
+      outcomeDistributions,
+      averageDecisionTimeDays,
+      activityLevel: stats?.council_development_activity_level ?? null,
     },
     recentApplications,
     constraints,
     nearbyContext: {
       buildingCount: ctx.nearbyContextFeatures.buildings.features.length,
       landUseTypes,
+      heightStats,
+      queryRadiusM: ctx.nearbyContextFeatures.queryRadiusM,
     },
   }
 }

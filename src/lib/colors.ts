@@ -2,14 +2,14 @@
 export type RgbaColor = [number, number, number, number]
 
 export const DECISION_COLORS: Record<string, RgbaColor> = {
-  Approved: [34, 197, 94, 60],      // green-500, light wash
-  Refused: [239, 68, 68, 60],       // red-500, light wash
-  Undetermined: [156, 163, 175, 40], // grey-400, light wash
+  Approved: [34, 197, 94, 88],      // green-500, semi-transparent (visible through refused)
+  Refused: [230, 10, 28, 115],      // vivid sharp red, slightly more opaque so overlap tints orange
+  Undetermined: [156, 163, 175, 45], // grey-400, light wash
 }
 
 export const DECISION_STROKE_COLORS: Record<string, RgbaColor> = {
   Approved: [22, 163, 74, 255],     // green-600
-  Refused: [220, 38, 38, 255],      // red-600
+  Refused: [220, 10, 20, 255],      // vivid sharp red — no orange tint, full saturation
   Undetermined: [107, 114, 128, 255], // grey-500
 }
 
@@ -51,7 +51,7 @@ export function getDecisionStrokeColor(decision: string | null): RgbaColor {
 /** CSS hex colour for UI badges */
 export const DECISION_HEX: Record<string, string> = {
   Approved: '#16a34a',
-  Refused: '#dc2626',
+  Refused: '#e00a14',  // sharper, more vivid red
   Undetermined: '#6b7280',
 }
 
