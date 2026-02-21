@@ -2,18 +2,24 @@
 
 import { useCallback } from 'react'
 import { useSiteStore } from '@/stores/siteStore'
-import type { SiteContext } from '@/types/siteContext'
+import { useIdentityStore } from '@/stores/identityStore'
+import type { SiteContext, InsightBullet } from '@/types/siteContext'
+import type { InsightsReport } from '@/types/insights'
 
 export function useInsights() {
   const {
     insight,
     insightLoading,
     insightError,
+    insightsReport,
     setInsight,
     setInsightLoading,
     setInsightError,
     setInsightBullets,
+    setInsightsReport,
   } = useSiteStore()
+
+  const { role, council } = useIdentityStore()
 
   const generateInsights = useCallback(async (siteContext: SiteContext) => {
     setInsightLoading(true)
@@ -21,12 +27,23 @@ export function useInsights() {
 
     try {
       const res = await fetch('/api/insights', {
-        method: 'POST',
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ siteContext }),
+        body: JSON.stringify({
+          siteContext,
+          role:       role ?? 'developer',
+          council:    council?.name ?? 'Unknown Council',
+          planCorpus: council?.planCorpus ?? null,
+        }),
       })
 
-      const data = await res.json()
+      const data = await res.json() as {
+        report?:  unknown
+        bullets?: unknown
+        raw?:     string
+        insight?: string
+        error?:   string
+      }
 
       if (!res.ok) {
         setInsightError(data.error ?? 'Failed to generate insights')
@@ -34,22 +51,28 @@ export function useInsights() {
         return
       }
 
-      // New structured response: { bullets, raw }
-      // Legacy response: { insight } — handled as fallback
-      if (data.raw != null) {
-        setInsight(data.raw as string)
-        if (Array.isArray(data.bullets)) {
-          setInsightBullets(data.bullets)
-        }
-      } else if (data.insight != null) {
-        setInsight(data.insight as string)
+      // Structured report (new format)
+      if (data.report != null) {
+        setInsightsReport(data.report as InsightsReport)
+      }
+
+      // Backward-compat bullets
+      if (Array.isArray(data.bullets)) {
+        setInsightBullets(data.bullets as InsightBullet[])
+      }
+
+      // Raw text for legacy consumers
+      if (typeof data.raw === 'string') {
+        setInsight(data.raw)
+      } else if (typeof data.insight === 'string') {
+        setInsight(data.insight)
       }
     } catch (err) {
       setInsightError(err instanceof Error ? err.message : 'Request failed')
     }
 
     setInsightLoading(false)
-  }, [setInsight, setInsightLoading, setInsightError, setInsightBullets])
+  }, [role, council, setInsight, setInsightLoading, setInsightError, setInsightBullets, setInsightsReport])
 
   const clearInsights = useCallback(() => {
     useSiteStore.getState().clearInsight()
@@ -57,8 +80,9 @@ export function useInsights() {
 
   return {
     insight,
+    insightsReport,
     isLoading: insightLoading,
-    error: insightError,
+    error:     insightError,
     generateInsights,
     clearInsights,
   }

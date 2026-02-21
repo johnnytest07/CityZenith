@@ -1,24 +1,124 @@
 import { NextRequest, NextResponse } from 'next/server'
-import type { SiteContext, InsightBullet, InsightCategory } from '@/types/siteContext'
+import type { SiteContext, InsightCategory } from '@/types/siteContext'
+import type { InsightsReport, InsightItem, InsightPriority } from '@/types/insights'
 import { serialiseSiteContext, type SerialisedSiteContext } from '@/lib/serialiseSiteContext'
 
-const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta'
+const GEMINI_BASE    = 'https://generativelanguage.googleapis.com/v1beta'
+const EMBED_MODEL    = 'text-embedding-004'
+const GEMINI_MODEL   = process.env.GEMINI_MODEL ?? 'gemini-2.5-pro'
+const MONGO_DB       = process.env.MONGODB_DB ?? 'cityzenith'
+const PLAN_COLLECTION   = 'council_plan_chunks'
+const VECTOR_INDEX_NAME = 'vector_index'
 
-// Override with GEMINI_MODEL env var to target a different model
-const GEMINI_MODEL = process.env.GEMINI_MODEL ?? 'gemini-2.5-pro'
+// ─── Local plan retrieval ─────────────────────────────────────────────────────
 
-function buildPrompt(summary: SerialisedSiteContext): string {
+interface PlanChunkResult {
+  section:     string
+  sectionType: string
+  text:        string
+  pageStart:   number
+  score:       number
+}
+
+async function embedQueryText(text: string, apiKey: string): Promise<number[]> {
+  const res = await fetch(
+    `${GEMINI_BASE}/models/${EMBED_MODEL}:batchEmbedContents?key=${apiKey}`,
+    {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requests: [{
+          model:    `models/${EMBED_MODEL}`,
+          content:  { parts: [{ text }] },
+          taskType: 'RETRIEVAL_QUERY',
+        }],
+      }),
+    },
+  )
+  if (!res.ok) throw new Error(`Embedding failed: ${res.status}`)
+  const data = await res.json() as { embeddings: Array<{ values: number[] }> }
+  return data.embeddings[0].values
+}
+
+async function queryLocalPlan(
+  planCorpus: string,
+  queryText:  string,
+  apiKey:     string,
+  limit = 6,
+): Promise<PlanChunkResult[]> {
+  if (!process.env.MONGODB_URI) return []
+
+  try {
+    const clientPromise = (await import('@/lib/mongoClient')).default
+    const client = await clientPromise
+    const db = client.db(MONGO_DB)
+
+    const queryVector = await embedQueryText(queryText, apiKey)
+
+    const docs = await db.collection(PLAN_COLLECTION).aggregate([
+      {
+        $vectorSearch: {
+          index:         VECTOR_INDEX_NAME,
+          path:          'embedding',
+          queryVector,
+          numCandidates: limit * 10,
+          limit,
+          filter:        { council: planCorpus },
+        },
+      },
+      {
+        $project: {
+          _id:         0,
+          embedding:   0,
+          section:     1,
+          sectionType: 1,
+          text:        1,
+          pageStart:   1,
+          score:       { $meta: 'vectorSearchScore' },
+        },
+      },
+    ]).toArray()
+
+    return docs as PlanChunkResult[]
+  } catch {
+    // MongoDB unavailable or index not built yet — continue without plan context
+    return []
+  }
+}
+
+/** Build a plan search query from the site context evidence. */
+function buildPlanSearchQuery(summary: SerialisedSiteContext): string {
+  const constraints = Object.entries(summary.constraints)
+    .filter(([, active]) => active)
+    .map(([type]) => type)
+    .join(' ')
+
+  const appTypes = [...new Set(
+    summary.recentApplications.map((a) => a.applicationType).filter(Boolean),
+  )].slice(0, 3).join(' ')
+
+  return `planning permission development ${constraints} ${appTypes}`.trim()
+}
+
+// ─── Prompt construction ──────────────────────────────────────────────────────
+
+function buildPrompt(
+  summary:    SerialisedSiteContext,
+  role:       'council' | 'developer',
+  council:    string,
+  planChunks: PlanChunkResult[],
+): string {
   const constraintList = Object.entries(summary.constraints)
     .filter(([, active]) => active)
     .map(([type]) => type)
     .join(', ') || 'none identified'
 
   const appLines = summary.recentApplications
-    .slice(0, 12)
+    .slice(0, 10)
     .map((a) => {
-      const tags = a.isHighValue ? ` | HIGH VALUE: ${a.highValueTags.join(', ')}` : ''
-      const speed = a.decisionSpeedDays != null ? ` | ${a.decisionSpeedDays}d to decide` : ''
-      return `• [${a.decision ?? 'pending'}] ${a.proposal.slice(0, 160)} (${a.applicationType ?? 'unknown type'}, complexity: ${a.complexityScore}${tags}${speed})`
+      const tags  = a.isHighValue ? ` | HIGH VALUE: ${a.highValueTags.join(', ')}` : ''
+      const speed = a.decisionSpeedDays != null ? ` | ${a.decisionSpeedDays}d` : ''
+      return `  • [${a.decision ?? 'pending'}] ${a.proposal.slice(0, 140)} (${a.applicationType ?? 'unknown type'}, ${a.complexityScore}${tags}${speed})`
     })
     .join('\n')
 
@@ -26,64 +126,127 @@ function buildPrompt(summary: SerialisedSiteContext): string {
     .map((o) => `${o.decision}: ${o.percentage.toFixed(0)}%`)
     .join(', ')
 
-  const hs = summary.nearbyContext.heightStats
-  const heightLine = hs
-    ? `min ${hs.min}m / max ${hs.max}m / mean ${hs.mean}m / median ${hs.median}m (${Math.round(hs.median / 3)} storeys typical)`
-    : 'no height data'
+  const planContext = planChunks.length > 0
+    ? [
+        '',
+        'LOCAL PLAN CONTEXT (relevant policies and supporting text)',
+        ...planChunks.map((c) =>
+          `  [${c.sectionType.toUpperCase()} – ${c.section}, p.${c.pageStart}]\n  ${c.text.slice(0, 600)}`,
+        ),
+      ].join('\n')
+    : ''
 
-  const medianStoreys = hs ? Math.round(hs.median / 3) : 2
-  const holdingCostLow = summary.planningStats.averageDecisionTimeDays != null
-    ? Math.round(summary.planningStats.averageDecisionTimeDays * 300 / 1000)
-    : null
-  const holdingCostHigh = summary.planningStats.averageDecisionTimeDays != null
-    ? Math.round(summary.planningStats.averageDecisionTimeDays * 800 / 1000)
-    : null
+  const roleIntro = role === 'developer'
+    ? 'The user is a DEVELOPER assessing this site. Focus on: approval likelihood, development constraints, density/typology signals, and investment opportunity.'
+    : 'The user is a COUNCIL OFFICER evaluating development proposals. Focus on: policy compliance, constraint management, design quality, and precedent-setting.'
 
-  return `You are a senior real-estate development consultant briefing an institutional developer evaluating a UK site for new-build residential or mixed-use development. Your audience is a development director, not a homeowner. Focus on what drives a development decision: planning risk, development quantum, viability, and programme cost. Ignore minor domestic works — they are background noise, not signal.
+  return `You are a senior UK planning consultant with deep knowledge of local planning policy.
 
-Analyse the evidence below and return exactly 4 insight bullets, one per category.
+${roleIntro}
 
-PLANNING STATISTICS (council-wide)
-- Total applications: ${summary.planningStats.totalApplications}
-- Outcome split: ${outcomes || 'no data'}
-- Avg decision time: ${summary.planningStats.averageDecisionTimeDays != null ? `${summary.planningStats.averageDecisionTimeDays} days` : 'unknown'}
-- Activity level: ${summary.planningStats.activityLevel ?? 'unknown'}
+SITE EVIDENCE ──────────────────────────────────────────────────────────────────
+
+PLANNING STATISTICS (${council})
+• Total applications: ${summary.planningStats.totalApplications}
+• Outcomes: ${outcomes || 'no data'}
+• Avg decision time: ${summary.planningStats.averageDecisionTimeDays != null ? `${summary.planningStats.averageDecisionTimeDays} days` : 'unknown'}
+• Activity level: ${summary.planningStats.activityLevel ?? 'unknown'}
 
 STATUTORY CONSTRAINTS
-- Active: ${constraintList}
+• Active: ${constraintList}
 
-RECENT APPLICATIONS ON THIS SITE (most recent first)
-${appLines || 'No applications found'}
+RECENT PLANNING APPLICATIONS (most recent first)
+${appLines || '  No applications found'}
 
-NEARBY BUILT CONTEXT (${summary.nearbyContext.queryRadiusM}m radius)
-- Buildings visible: ${summary.nearbyContext.buildingCount}
-- Building heights: ${heightLine}
-- Land use types: ${summary.nearbyContext.landUseTypes.join(', ') || 'unknown'}
+NEARBY BUILT CONTEXT (250 m radius)
+• Buildings visible: ${summary.nearbyContext.buildingCount}
+• Land use types: ${summary.nearbyContext.landUseTypes.join(', ') || 'unknown'}
+${planContext}
 
-INSTRUCTIONS
-Return a JSON array with exactly 4 objects. Each object:
-  - "category": one of "planning", "constraints", "built_form", "council"
-  - "text": ONE sentence, max 40 words, written for a development director
+TASK ───────────────────────────────────────────────────────────────────────────
 
-Strict rules per category:
+Analyse this site thoroughly, then return a structured JSON insights report.
 
-- "planning": Scan the site applications. Discard garage conversions, single extensions, and householder works entirely — they are not relevant. Focus only on schemes with development significance: change of use to residential (C3/HMO/C2), new-build, conversion to flats, or commercial intensification. Did any such scheme succeed or fail here? What does that precedent tell a developer about planning risk for a residential or mixed-use scheme on this site? If no meaningful precedents exist, state that the site carries no local refusal risk from comparable schemes. Always cite a number.
+For each insight: first think through the detailed evidence (this becomes "detail"),
+then distil it to a punchy headline (this becomes "headline").
 
-- "constraints": If constraints are active, state the specific impact on development deliverability: Article 4 removes PD rights and requires full planning for every unit; Green Belt restricts new-build; Conservation Area requires materials sign-off; Flood Risk requires sequential test. If no constraints are active, name 2–3 development types that are now viable without needing constraint relief (e.g. C3 residential via full planning, prior approval conversions). Do not just say "no restrictions".
-
-- "built_form": The nearby median height of ${hs?.median ?? 0}m implies a ${medianStoreys}-storey context. Translate this into a development quantum signal: a ${medianStoreys}-storey new-build or conversion on a typical 200–400m² urban plot could yield approximately ${medianStoreys * 2}–${medianStoreys * 3} units at 40–50m² NIA each. Frame this as a viability signal, not a design note — cite the median height and the implied unit count.
-
-- "council": Frame the ${summary.planningStats.averageDecisionTimeDays ?? '?'}-day average decision time and ${outcomes} approval rate as hard programme and cost risk numbers for a developer.${holdingCostLow != null ? ` At typical development finance rates, a ${summary.planningStats.averageDecisionTimeDays}-day wait adds roughly £${holdingCostLow}k–£${holdingCostHigh}k in holding costs per £1m of GDV.` : ''} State whether this is a fast or slow council and whether the approval rate de-risks or adds risk to a speculative scheme.
-
-Non-negotiable rules:
-- Do NOT cite garage conversions, loft extensions, or householder works as the key planning finding.
-- Every sentence must contain at least one number from the evidence above.
-- Do NOT use vague phrases like "design freedom", "opportunity", "may offer", or "could potentially".
-- Write as if you are presenting at a pre-acquisition board meeting.
-
-Return ONLY a valid JSON array. No markdown, no preamble.
-Example: [{"category":"planning","text":"..."},{"category":"constraints","text":"..."},{"category":"built_form","text":"..."},{"category":"council","text":"..."}]`
+Return ONLY valid JSON — no markdown fences, no preamble, no trailing text:
+{
+  "summary": "2–3 sentence overall assessment for a ${role === 'developer' ? 'developer' : 'council officer'}",
+  "items": [
+    {
+      "id": "planning-1",
+      "category": "planning",
+      "priority": "high",
+      "headline": "Punchy headline, max 12 words",
+      "detail": "2–4 sentences of specific, evidence-grounded analysis. Reference actual application types, decisions, policies, or statistics.",
+      "evidenceSources": ["IBEX planning data", "Local Plan Policy H1"]
+    }
+  ]
 }
+
+Rules:
+• Generate 5–7 insight items total
+• Valid categories: "planning", "constraints", "built_form", "council"
+• Valid priorities: "high" (immediate relevance), "medium" (relevant context), "low" (background)
+• Make each item distinct — no duplication across categories
+• If local plan policies are provided above, cite specific policy codes in detail and evidenceSources
+• Order items with highest-priority first`
+}
+
+// ─── Response parsing ─────────────────────────────────────────────────────────
+
+function parseInsightsReport(
+  text:    string,
+  role:    'council' | 'developer',
+  council: string,
+): InsightsReport | null {
+  try {
+    const cleaned = text.trim()
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/\s*```\s*$/, '')
+    const parsed = JSON.parse(cleaned) as {
+      summary?: unknown
+      items?:   unknown[]
+    }
+
+    if (!parsed.summary || !Array.isArray(parsed.items)) return null
+
+    const validCategories: InsightCategory[] = ['planning', 'constraints', 'built_form', 'council']
+    const validPriorities: InsightPriority[]  = ['high', 'medium', 'low']
+
+    const items: InsightItem[] = (parsed.items as Record<string, unknown>[])
+      .filter((item) =>
+        typeof item === 'object' && item !== null &&
+        validCategories.includes(item['category'] as InsightCategory) &&
+        validPriorities.includes(item['priority'] as InsightPriority) &&
+        typeof item['headline'] === 'string' &&
+        typeof item['detail']   === 'string',
+      )
+      .map((item, idx) => ({
+        id:              typeof item['id'] === 'string' ? item['id'] : `item-${idx}`,
+        category:        item['category'] as InsightCategory,
+        priority:        item['priority'] as InsightPriority,
+        headline:        item['headline'] as string,
+        detail:          item['detail'] as string,
+        evidenceSources: Array.isArray(item['evidenceSources'])
+          ? (item['evidenceSources'] as unknown[]).filter((s): s is string => typeof s === 'string')
+          : [],
+      }))
+
+    return {
+      summary:     String(parsed.summary),
+      items,
+      role,
+      council,
+      generatedAt: new Date().toISOString(),
+    }
+  } catch {
+    return null
+  }
+}
+
+// ─── Route handler ────────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
   const apiKey = process.env.GEMINI_API_KEY
@@ -92,28 +255,48 @@ export async function POST(request: NextRequest) {
   }
 
   let siteContext: SiteContext
+  let role:       'council' | 'developer' = 'developer'
+  let council     = 'Unknown Council'
+  let planCorpus: string | null = null
+
   try {
-    const body = await request.json()
+    const body = await request.json() as {
+      siteContext?: SiteContext
+      role?:        string
+      council?:     string
+      planCorpus?:  string
+    }
+    if (!body.siteContext) throw new Error('missing siteContext')
     siteContext = body.siteContext
+    if (body.role === 'council' || body.role === 'developer') role = body.role
+    if (typeof body.council    === 'string') council    = body.council
+    if (typeof body.planCorpus === 'string') planCorpus = body.planCorpus
   } catch {
-    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+    return NextResponse.json({ error: 'Invalid JSON body or missing siteContext' }, { status: 400 })
   }
 
   if (!siteContext?.siteId) {
-    return NextResponse.json({ error: 'siteContext is required' }, { status: 400 })
+    return NextResponse.json({ error: 'siteContext.siteId is required' }, { status: 400 })
   }
 
   const summary = serialiseSiteContext(siteContext)
-  const prompt   = buildPrompt(summary)
+
+  // Query local plan if a corpus is available for this council
+  let planChunks: PlanChunkResult[] = []
+  if (planCorpus) {
+    const searchQuery = buildPlanSearchQuery(summary)
+    planChunks = await queryLocalPlan(planCorpus, searchQuery, apiKey)
+  }
+
+  const prompt = buildPrompt(summary, role, council, planChunks)
 
   const geminiBody = {
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     generationConfig: {
-      temperature: 0.3,
-      // Thinking tokens count against maxOutputTokens on gemini-2.5-pro.
-      // Budget 2048 for thinking + ~512 for the actual bullet points = 8192 headroom.
+      temperature:     0.3,
       maxOutputTokens: 8192,
-      thinkingConfig: { thinkingBudget: 2048 },
+      // Thinking budget: 4096 for reasoning + headroom for the JSON output
+      thinkingConfig:  { thinkingBudget: 4096 },
     },
   }
 
@@ -121,9 +304,9 @@ export async function POST(request: NextRequest) {
     const res = await fetch(
       `${GEMINI_BASE}/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
       {
-        method: 'POST',
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(geminiBody),
+        body:    JSON.stringify(geminiBody),
       },
     )
 
@@ -135,52 +318,37 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const data = await res.json()
-    // When thinkingConfig is active, parts[0] is the reasoning block (thought: true)
-    // and the actual answer is in a later part. Skip thought parts to find the text.
-    const parts: Array<{ text?: string; thought?: boolean }> =
-      data?.candidates?.[0]?.content?.parts ?? []
-    const text: string = parts.find((p) => p.text && !p.thought)?.text ?? ''
+    const data = await res.json() as {
+      candidates?: Array<{
+        content?: { parts?: Array<{ text?: string; thought?: boolean }> }
+      }>
+    }
+
+    // When thinkingConfig is active, skip thought parts to find the actual text
+    const parts = data?.candidates?.[0]?.content?.parts ?? []
+    const text  = parts.find((p) => p.text && !p.thought)?.text ?? ''
 
     if (!text) {
       return NextResponse.json({ error: 'Gemini returned an empty response' }, { status: 502 })
     }
 
-    // Parse structured bullets from JSON response
-    let bullets: InsightBullet[] = []
-    try {
-      // Strip any accidental markdown fences
-      const cleaned = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '')
-      const parsed = JSON.parse(cleaned)
-      if (Array.isArray(parsed)) {
-        const validCategories: InsightCategory[] = ['planning', 'constraints', 'built_form', 'council']
-        bullets = parsed
-          .filter((b: unknown): b is InsightBullet =>
-            typeof b === 'object' && b !== null &&
-            'category' in b && 'text' in b &&
-            validCategories.includes((b as InsightBullet).category) &&
-            typeof (b as InsightBullet).text === 'string',
-          )
-      }
-    } catch {
-      // Fallback: parse as bullet list lines and assign categories in order
-      const categories: InsightCategory[] = ['planning', 'constraints', 'built_form', 'council']
-      bullets = text.trim()
-        .split('\n')
-        .filter((l) => l.trim().startsWith('•'))
-        .slice(0, 4)
-        .map((l, i) => ({
-          category: categories[i] ?? 'planning',
-          text: l.replace(/^•\s*/, '').trim(),
-        }))
+    const report = parseInsightsReport(text, role, council)
+
+    if (!report) {
+      return NextResponse.json(
+        { error: 'Could not parse structured insights from response', raw: text },
+        { status: 502 },
+      )
     }
 
-    // Build raw text for backward compat (map tooltip + InsightsPanel)
-    const raw = bullets.length > 0
-      ? bullets.map((b) => '• ' + b.text).join('\n')
-      : text.trim()
+    // Backward-compatible bullets + raw for legacy consumers
+    const validCategories: InsightCategory[] = ['planning', 'constraints', 'built_form', 'council']
+    const bullets = report.items
+      .filter((item) => validCategories.includes(item.category))
+      .map((item) => ({ category: item.category, text: item.headline }))
+    const raw = report.items.map((item) => `• ${item.headline}`).join('\n')
 
-    return NextResponse.json({ bullets, raw })
+    return NextResponse.json({ report, bullets, raw })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     return NextResponse.json({ error: `Gemini request failed: ${message}` }, { status: 502 })
