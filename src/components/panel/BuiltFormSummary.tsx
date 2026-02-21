@@ -13,8 +13,8 @@ export function BuiltFormSummary() {
   const { siteContext, insightBullets, insightLoading } = useSiteStore();
   const [expanded, setExpanded] = useState(false);
 
-  const insightBullet =
-    insightBullets?.find((b) => b.category === "built_form") ?? null;
+  const builtFormBullets =
+    insightBullets?.filter((b) => b.category === "built_form").map((b) => b.text) ?? [];
 
   const { buildings, landuse, queryRadiusM } =
     siteContext?.nearbyContextFeatures ?? {
@@ -109,8 +109,8 @@ export function BuiltFormSummary() {
             and reselect.
           </p>
           <InsightCallout
-            text={insightBullet?.text ?? null}
-            isLoading={insightLoading && !insightBullet}
+            texts={builtFormBullets}
+            isLoading={insightLoading && builtFormBullets.length === 0}
           />
         </>
       ) : (
@@ -167,8 +167,8 @@ export function BuiltFormSummary() {
           )}
 
           <InsightCallout
-            text={insightBullet?.text ?? null}
-            isLoading={insightLoading && !insightBullet}
+            texts={builtFormBullets}
+            isLoading={insightLoading && builtFormBullets.length === 0}
           />
         </div>
       )}

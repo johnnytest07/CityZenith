@@ -95,9 +95,20 @@ function OptionCard({
 
       {/* Reasoning */}
       <div className="px-3 pb-2 border-t border-gray-800/60 pt-2">
-        <p className="text-xs text-gray-400 leading-relaxed">
-          {option.reasoning}
-        </p>
+        <ul className="space-y-1">
+          {(Array.isArray(option.reasoning)
+            ? option.reasoning
+            : [option.reasoning]
+          ).map((point, i) => (
+            <li
+              key={i}
+              className="text-xs text-gray-400 leading-relaxed flex gap-1.5"
+            >
+              <span className="text-gray-500 shrink-0 mt-0.5">•</span>
+              <span>{point}</span>
+            </li>
+          ))}
+        </ul>
       </div>
 
       {/* Factors */}

@@ -27,6 +27,8 @@ export function MapPrompt({ showHint = false }: MapPromptProps) {
   const { setViewState } = useMapStore();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  // True after a successful navigation — suppresses dropdown until user types new text
+  const navigatedRef = useRef(false);
 
   // Debounced autocomplete fetch
   useEffect(() => {
@@ -37,6 +39,7 @@ export function MapPrompt({ showHint = false }: MapPromptProps) {
       return;
     }
     debounceRef.current = setTimeout(async () => {
+      if (navigatedRef.current) return;
       try {
         const res = await fetch(
           `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&countrycodes=gb&format=json&limit=6`,
@@ -76,6 +79,7 @@ export function MapPrompt({ showHint = false }: MapPromptProps) {
       pitch: 45,
       bearing: -17.6,
     });
+    navigatedRef.current = true;
     setShowSuggestions(false);
   }
 
@@ -111,6 +115,7 @@ export function MapPrompt({ showHint = false }: MapPromptProps) {
     setQuery("");
     setSuggestions([]);
     setShowSuggestions(false);
+    navigatedRef.current = false;
   }
 
   const showDropdown = showSuggestions && suggestions.length > 0;
@@ -142,8 +147,15 @@ export function MapPrompt({ showHint = false }: MapPromptProps) {
           <input
             type="text"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+            onChange={(e) => {
+              navigatedRef.current = false;
+              setQuery(e.target.value);
+            }}
+            onFocus={() =>
+              !navigatedRef.current &&
+              suggestions.length > 0 &&
+              setShowSuggestions(true)
+            }
             placeholder="Search postcode or address…"
             className="flex-1 text-gray-800 text-sm bg-transparent outline-none placeholder-gray-400"
             autoComplete="off"

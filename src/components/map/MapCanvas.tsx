@@ -14,6 +14,7 @@ import { DeckOverlay } from "./DeckOverlay";
 import { useSiteStore } from "@/stores/siteStore";
 import { useMapStore } from "@/stores/mapStore";
 import { useDevStore } from "@/stores/devStore";
+import { useIdentityStore } from "@/stores/identityStore";
 import { useSiteSelection } from "@/hooks/useSiteSelection";
 import { createPlanningPrecedentLayer } from "./layers/PlanningPrecedentLayer";
 import { buildConstraintLayers } from "./layers/ConstraintIntersectionLayer";
@@ -35,15 +36,17 @@ const MAPTILER_KEY = process.env.NEXT_PUBLIC_MAPTILER_KEY ?? "";
  * Buffered-centroid features carry lat/lng in properties; real polygon
  * features use the geometric centroid of the outer ring.
  */
-function getPrecedentCenter(
-  feature: GeoJSON.Feature,
-): [number, number] | null {
+function getPrecedentCenter(feature: GeoJSON.Feature): [number, number] | null {
   const p = feature.properties ?? {};
   if (p.geometrySource === "buffered-centroid") {
     const lng =
-      typeof p.longitude === "number" ? p.longitude : parseFloat(String(p.longitude ?? ""));
+      typeof p.longitude === "number"
+        ? p.longitude
+        : parseFloat(String(p.longitude ?? ""));
     const lat =
-      typeof p.latitude === "number" ? p.latitude : parseFloat(String(p.latitude ?? ""));
+      typeof p.latitude === "number"
+        ? p.latitude
+        : parseFloat(String(p.latitude ?? ""));
     if (!isNaN(lng) && !isNaN(lat)) return [lng, lat];
   }
   if (feature.geometry?.type === "Polygon") {
@@ -77,7 +80,73 @@ const FORMAL_COUNCIL_NAMES: Record<string, string> = {
   E06000040: "Royal Borough of Windsor and Maidenhead",
 };
 
-async function addCouncilBoundaries(map: MapLibreMap) {
+/**
+ * Apply council-mode paint to the boundary layers.
+ * When role is 'council' and onsCode is known, all regions except the user's
+ * own are greyed out. Otherwise the default indigo wash is shown.
+ */
+function applyCouncilBoundaryStyle(
+  map: MapLibreMap,
+  isCouncilMode: boolean,
+  onsCode?: string,
+) {
+  if (!map.getLayer("council-boundaries-fill")) return;
+
+  if (isCouncilMode && onsCode) {
+    // Own council: keep the subtle indigo wash. Others: heavy grey overlay.
+    map.setPaintProperty("council-boundaries-fill", "fill-color", [
+      "case",
+      ["==", ["get", "LAD24CD"], onsCode],
+      "#6366f1",
+      "#374151",
+    ]);
+    map.setPaintProperty("council-boundaries-fill", "fill-opacity", [
+      "case",
+      ["==", ["get", "LAD24CD"], onsCode],
+      0.06,
+      0.45,
+    ]);
+    map.setPaintProperty("council-boundaries-line", "line-color", [
+      "case",
+      ["==", ["get", "LAD24CD"], onsCode],
+      "#818cf8",
+      "#1f2937",
+    ]);
+    map.setPaintProperty("council-boundaries-line", "line-opacity", [
+      "case",
+      ["==", ["get", "LAD24CD"], onsCode],
+      0.8,
+      0.6,
+    ]);
+    // Dim labels for other councils
+    map.setPaintProperty("council-names", "text-color", [
+      "case",
+      ["==", ["get", "LAD24CD"], onsCode],
+      "#3730a3",
+      "#374151",
+    ]);
+    map.setPaintProperty("council-names", "text-opacity", [
+      "case",
+      ["==", ["get", "LAD24CD"], onsCode],
+      1.0,
+      0.3,
+    ]);
+  } else {
+    // Default: uniform indigo wash for all councils
+    map.setPaintProperty("council-boundaries-fill", "fill-color", "#6366f1");
+    map.setPaintProperty("council-boundaries-fill", "fill-opacity", 0.04);
+    map.setPaintProperty("council-boundaries-line", "line-color", "#6366f1");
+    map.setPaintProperty("council-boundaries-line", "line-opacity", 0.6);
+    map.setPaintProperty("council-names", "text-color", "#3730a3");
+    map.setPaintProperty("council-names", "text-opacity", 1.0);
+  }
+}
+
+async function addCouncilBoundaries(
+  map: MapLibreMap,
+  isCouncilMode: boolean,
+  onsCode?: string,
+) {
   if (map.getSource("council-boundaries")) return;
 
   try {
@@ -162,6 +231,9 @@ async function addCouncilBoundaries(map: MapLibreMap) {
         "text-halo-width": 1.5,
       },
     });
+
+    // Apply council-mode styling immediately after layers are added
+    applyCouncilBoundaryStyle(map, isCouncilMode, onsCode);
   } catch (err) {
     console.warn("Could not load council boundaries:", err);
   }
@@ -170,8 +242,14 @@ async function addCouncilBoundaries(map: MapLibreMap) {
 export function MapCanvas() {
   const mapRef = useRef<MapRef>(null);
   const { viewState, setViewState, setBounds } = useMapStore();
-  const { siteContext, insight, insightLoading, hoveredPrecedentId } =
-    useSiteStore();
+  const {
+    siteContext,
+    insight,
+    insightLoading,
+    hoveredPrecedentId,
+    selectedPrecedentId,
+    setSelectedPrecedentId,
+  } = useSiteStore();
   const {
     buildMode,
     buildStep,
@@ -195,6 +273,7 @@ export function MapCanvas() {
   const mapLibreRef = useRef<MapLibreMap | null>(null);
 
   const { selectSite } = useSiteSelection(mapLibreRef);
+  const { role, council } = useIdentityStore();
 
   const handleMapLoad = useCallback(() => {
     const map = mapRef.current?.getMap();
@@ -259,8 +338,25 @@ export function MapCanvas() {
     }
 
     // --- Council boundaries (async, non-blocking) ---
-    addCouncilBoundaries(map as unknown as MapLibreMap);
+    const isCouncilMode = useIdentityStore.getState().role === "council";
+    const onsCode = useIdentityStore.getState().council?.onsCode;
+    addCouncilBoundaries(map as unknown as MapLibreMap, isCouncilMode, onsCode);
   }, []);
+
+  // Re-apply boundary styles whenever the user's identity changes
+  useEffect(() => {
+    const map = mapLibreRef.current;
+    if (!map) return;
+    const isCouncilMode = role === "council";
+    const onsCode = council?.onsCode;
+    // Layers may still be loading from the async fetch; retry after a short delay
+    applyCouncilBoundaryStyle(map, isCouncilMode, onsCode);
+    const timer = setTimeout(
+      () => applyCouncilBoundaryStyle(map, isCouncilMode, onsCode),
+      1500,
+    );
+    return () => clearTimeout(timer);
+  }, [role, council]);
 
   const handleMove = useCallback(
     (evt: ViewStateChangeEvent) => {
@@ -514,14 +610,8 @@ export function MapCanvas() {
         ...createPlanningPrecedentLayer(
           siteContext.planningPrecedentFeatures,
           (feature) => {
-            const center =
-              feature.geometry.type === "Polygon"
-                ? (feature.geometry.coordinates[0][0] as [number, number])
-                : ([
-                    feature.properties?.longitude ?? 0,
-                    feature.properties?.latitude ?? 0,
-                  ] as [number, number]);
-            selectSite(center);
+            const ref = feature.properties?.planning_reference as string | undefined;
+            if (ref) setSelectedPrecedentId(ref);
           },
         ),
       );
@@ -529,9 +619,10 @@ export function MapCanvas() {
 
     // --- Hover highlight for precedent hovered in the side panel ---
     if (hoveredPrecedentId) {
-      const hoveredFeature = siteContext.planningPrecedentFeatures.features.find(
-        (f) => f.properties?.planning_reference === hoveredPrecedentId,
-      );
+      const hoveredFeature =
+        siteContext.planningPrecedentFeatures.features.find(
+          (f) => f.properties?.planning_reference === hoveredPrecedentId,
+        );
       if (hoveredFeature) {
         layers.push(
           new GeoJsonLayer({
@@ -553,7 +644,11 @@ export function MapCanvas() {
     }
 
     // --- Drawing layer (polygon being placed) ---
-    if (buildMode === "new" && buildStep === "place" && polygonNodes.length > 0) {
+    if (
+      buildMode === "new" &&
+      buildStep === "place" &&
+      polygonNodes.length > 0
+    ) {
       layers.push(
         ...createDrawingLayers(
           polygonNodes,
@@ -605,6 +700,7 @@ export function MapCanvas() {
   }, [
     siteContext,
     selectSite,
+    setSelectedPrecedentId,
     buildMode,
     buildStep,
     buildPolygon,
@@ -615,11 +711,13 @@ export function MapCanvas() {
     hoveredPrecedentId,
   ]);
 
-  // Compute the hovered precedent feature + its map centre for the Popup
-  const hoveredPrecedentFeature = hoveredPrecedentId
-    ? siteContext?.planningPrecedentFeatures.features.find(
-        (f) => f.properties?.planning_reference === hoveredPrecedentId,
-      ) ?? null
+  // Popup shows for the panel-hovered precedent OR the map-clicked one.
+  // Panel hover takes priority (it's more ephemeral).
+  const popupPrecedentId = hoveredPrecedentId ?? selectedPrecedentId;
+  const hoveredPrecedentFeature = popupPrecedentId
+    ? (siteContext?.planningPrecedentFeatures.features.find(
+        (f) => f.properties?.planning_reference === popupPrecedentId,
+      ) ?? null)
     : null;
   const hoveredPrecedentCenter = hoveredPrecedentFeature
     ? getPrecedentCenter(hoveredPrecedentFeature)
@@ -646,73 +744,73 @@ export function MapCanvas() {
         <DeckOverlay layers={deckLayers} getTooltip={getTooltip} />
 
         {/* Precedent hover popup — shown when a panel list item is hovered */}
-        {hoveredPrecedentCenter && hoveredPrecedentFeature && (() => {
-          const p = hoveredPrecedentFeature.properties ?? {};
-          const decision: string = p.normalised_decision ?? "";
-          const decisionColor = decision.toLowerCase().includes("approv")
-            ? "#4ade80"
-            : decision.toLowerCase().includes("refus")
-              ? "#f87171"
-              : "#9ca3af";
-          const proposal: string = (p.proposal ?? "").slice(0, 110);
-          const date: string = p.decided_date
-            ? new Date(p.decided_date).toLocaleDateString("en-GB", {
-                year: "numeric",
-                month: "short",
-                day: "numeric",
-              })
-            : "";
-          return (
-            <Popup
-              longitude={hoveredPrecedentCenter[0]}
-              latitude={hoveredPrecedentCenter[1]}
-              closeButton={false}
-              closeOnClick={false}
-              anchor="bottom"
-              offset={12}
-              className="precedent-popup"
-            >
-              <div>
-                {decision && (
+        {hoveredPrecedentCenter &&
+          hoveredPrecedentFeature &&
+          (() => {
+            const p = hoveredPrecedentFeature.properties ?? {};
+            const decision: string = p.normalised_decision ?? "";
+            const decisionColor = decision.toLowerCase().includes("approv")
+              ? "#4ade80"
+              : decision.toLowerCase().includes("refus")
+                ? "#f87171"
+                : "#9ca3af";
+            const proposal: string = (p.proposal ?? "").slice(0, 110);
+            const date: string = p.decided_date
+              ? new Date(p.decided_date).toLocaleDateString("en-GB", {
+                  year: "numeric",
+                  month: "short",
+                  day: "numeric",
+                })
+              : "";
+            return (
+              <Popup
+                longitude={hoveredPrecedentCenter[0]}
+                latitude={hoveredPrecedentCenter[1]}
+                closeButton={false}
+                closeOnClick={false}
+                anchor="bottom"
+                offset={12}
+                className="precedent-popup"
+              >
+                <div>
+                  {decision && (
+                    <div
+                      style={{
+                        fontWeight: 700,
+                        color: decisionColor,
+                        marginBottom: 4,
+                      }}
+                    >
+                      {decision}
+                    </div>
+                  )}
                   <div
                     style={{
-                      fontWeight: 700,
-                      color: decisionColor,
-                      marginBottom: 4,
+                      color: "#a1a1aa",
+                      fontFamily: "monospace",
+                      marginBottom: 3,
                     }}
                   >
-                    {decision}
+                    {p.planning_reference}
                   </div>
-                )}
-                <div
-                  style={{
-                    color: "#a1a1aa",
-                    fontFamily: "monospace",
-                    marginBottom: 3,
-                  }}
-                >
-                  {p.planning_reference}
-                </div>
-                {proposal && (
-                  <div style={{ color: "#d4d4d8", marginBottom: 3 }}>
-                    {proposal}
-                    {(p.proposal ?? "").length > 110 ? "…" : ""}
-                  </div>
-                )}
-                <div
-                  style={{ color: "#71717a", display: "flex", gap: 8 }}
-                >
-                  {date && <span>{date}</span>}
-                  {p.normalised_application_type && (
-                    <span style={{ color: "#52525b" }}>
-                      {p.normalised_application_type}
-                    </span>
+                  {proposal && (
+                    <div style={{ color: "#d4d4d8", marginBottom: 3 }}>
+                      {proposal}
+                      {(p.proposal ?? "").length > 110 ? "…" : ""}
+                    </div>
                   )}
+                  <div style={{ color: "#71717a", display: "flex", gap: 8 }}>
+                    {date && <span>{date}</span>}
+                    {p.normalised_application_type && (
+                      <span style={{ color: "#52525b" }}>
+                        {p.normalised_application_type}
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
-            </Popup>
-          );
-        })()}
+              </Popup>
+            );
+          })()}
       </Map>
     </div>
   );

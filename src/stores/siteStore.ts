@@ -30,6 +30,12 @@ interface SiteStore {
   hoveredPrecedentId: string | null
 
   /**
+   * planning_reference selected by clicking a precedent polygon on the map.
+   * Persists until a new site is selected. PrecedentList scrolls to + highlights this card.
+   */
+  selectedPrecedentId: string | null
+
+  /**
    * Initialise a new SiteContext with siteId + siteGeometry.
    * Called at the start of site selection to open the panel immediately.
    */
@@ -55,6 +61,7 @@ interface SiteStore {
   clearInsight: () => void
 
   setHoveredPrecedentId: (id: string | null) => void
+  setSelectedPrecedentId: (id: string | null) => void
 }
 
 const DEFAULT_LOADING: SiteLoadingStates = {
@@ -74,6 +81,7 @@ export const useSiteStore = create<SiteStore>((set) => ({
   insightBullets: null,
   insightsReport: null,
   hoveredPrecedentId: null,
+  selectedPrecedentId: null,
 
   initialiseSiteContext: (siteId, siteGeometry) =>
     set({
@@ -99,6 +107,7 @@ export const useSiteStore = create<SiteStore>((set) => ({
       insightError: null,
       insightBullets: null,
       hoveredPrecedentId: null,
+      selectedPrecedentId: null,
     }),
 
   updateSiteContext: (partial) =>
@@ -120,6 +129,7 @@ export const useSiteStore = create<SiteStore>((set) => ({
       insightBullets: null,
       insightsReport: null,
       hoveredPrecedentId: null,
+      selectedPrecedentId: null,
     }),
 
   setLoading: (source, loading) =>
@@ -141,7 +151,7 @@ export const useSiteStore = create<SiteStore>((set) => ({
     insightBullets: null,
     insightsReport: null,
   }),
-  clearInsight: () => set({ insight: null, insightLoading: false, insightError: null, insightBullets: null }),
 
   setHoveredPrecedentId: (id) => set({ hoveredPrecedentId: id }),
+  setSelectedPrecedentId: (id) => set({ selectedPrecedentId: id }),
 }))

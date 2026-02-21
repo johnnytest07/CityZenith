@@ -216,7 +216,12 @@ Return a JSON object with this exact structure — no markdown, no preamble:
     "storeys": <integer — match dominant local height unless you have strong planning reason not to>,
     "approxFootprintM2": ${roundedArea},
     "approxHeightM": <realistic height in metres from the table above — NOT storeys × 3>,
-    "reasoning": "<2–3 sentences citing specific local data: dominant storey count, avg height, approval rate, constraints>",
+    "reasoning": [
+      "<bullet 1: how this fits local street character — cite dominant storey count and avg height>",
+      "<bullet 2: planning evidence — approval rate, recent app types, activity level>",
+      "<bullet 3: any statutory constraints and their implication, or 'No active statutory constraints' if none>",
+      "<bullet 4: overall likelihood of success and key risk if any>"
+    ],
     "factors": [
       { "label": "<≤20 chars>", "value": "<actual data value>", "impact": "positive" | "neutral" | "negative" },
       ... 4–5 factors
@@ -226,17 +231,17 @@ Return a JSON object with this exact structure — no markdown, no preamble:
     {
       ALTERNATIVE 1: A SHORTER / SMALLER option than primary (match or go below dominant local height)
       "buildingType": "...", "style": "...", "storeys": ..., "approxFootprintM2": ${roundedArea}, "approxHeightM": ...,
-      "reasoning": "...", "factors": [...]
+      "reasoning": ["<bullet 1>", "<bullet 2>", "<bullet 3>"], "factors": [...]
     },
     {
       ALTERNATIVE 2: A TALLER / DENSER option (push the planning envelope — justify with precedent or approval rate)
       "buildingType": "...", "style": "...", "storeys": ..., "approxFootprintM2": ${roundedArea}, "approxHeightM": ...,
-      "reasoning": "...", "factors": [...]
+      "reasoning": ["<bullet 1>", "<bullet 2>", "<bullet 3>"], "factors": [...]
     },
     {
       ALTERNATIVE 3: A DIFFERENT USE CLASS (mixed-use, commercial, live-work — must differ in building type, not just style)
       "buildingType": "...", "style": "...", "storeys": ..., "approxFootprintM2": ${roundedArea}, "approxHeightM": ...,
-      "reasoning": "...", "factors": [...]
+      "reasoning": ["<bullet 1>", "<bullet 2>", "<bullet 3>"], "factors": [...]
     }
   ]
 }
@@ -344,9 +349,14 @@ export async function POST(request: NextRequest) {
           typeof opt.style !== 'string' ||
           typeof opt.storeys !== 'number' ||
           typeof opt.approxFootprintM2 !== 'number' ||
-          typeof opt.approxHeightM !== 'number' ||
-          typeof opt.reasoning !== 'string'
+          typeof opt.approxHeightM !== 'number'
         ) return false
+        // Normalise reasoning: accept string (legacy) or array
+        if (typeof opt.reasoning === 'string') {
+          opt.reasoning = opt.reasoning.split(/(?<=\.\s)/).map((s: string) => s.trim()).filter(Boolean)
+        } else if (!Array.isArray(opt.reasoning)) {
+          opt.reasoning = []
+        }
         // Normalise missing/malformed factors to an empty array rather than rejecting
         if (!Array.isArray(opt.factors)) opt.factors = []
         return true

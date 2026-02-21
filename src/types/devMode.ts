@@ -13,7 +13,8 @@ export interface BuildingOption {
   storeys: number
   approxFootprintM2: number
   approxHeightM: number
-  reasoning: string
+  /** 3–4 concise bullet points explaining the recommendation */
+  reasoning: string[]
   /** Key evidence factors that drove this recommendation */
   factors: RecommendFactor[]
 }

@@ -11,8 +11,8 @@ export function PlanningStats() {
     useSiteStore();
   const [expanded, setExpanded] = useState(false);
 
-  const insightBullet =
-    insightBullets?.find((b) => b.category === "council") ?? null;
+  const councilBullets =
+    insightBullets?.filter((b) => b.category === "council").map((b) => b.text) ?? [];
 
   const stats: PlanningContextStats | null =
     siteContext?.planningContextStats ?? null;
@@ -63,8 +63,8 @@ export function PlanningStats() {
           No statistical data available for this site.
         </p>
         <InsightCallout
-          text={insightBullet?.text ?? null}
-          isLoading={insightLoading && !insightBullet}
+          texts={councilBullets}
+          isLoading={insightLoading && councilBullets.length === 0}
         />
       </SectionCard>
     );
@@ -186,8 +186,8 @@ export function PlanningStats() {
           )}
 
         <InsightCallout
-          text={insightBullet?.text ?? null}
-          isLoading={insightLoading && !insightBullet}
+          texts={councilBullets}
+          isLoading={insightLoading && councilBullets.length === 0}
         />
       </div>
     </SectionCard>

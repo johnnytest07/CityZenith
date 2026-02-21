@@ -113,7 +113,20 @@ function buildPrompt(
     .map(([type]) => type)
     .join(', ') || 'none identified'
 
-  const appLines = summary.recentApplications
+  // Filter out domestic/householder works — not relevant for site assessment
+  const substantiveApps = summary.recentApplications.filter((a) => {
+    const p = a.proposal.toLowerCase()
+    return !(
+      p.includes('garage conversion') ||
+      p.includes('loft conversion') ||
+      p.includes('single storey extension') ||
+      p.includes('rear extension') ||
+      p.includes('side extension') ||
+      p.includes('householder')
+    )
+  })
+
+  const appLines = substantiveApps
     .slice(0, 10)
     .map((a) => {
       const tags  = a.isHighValue ? ` | HIGH VALUE: ${a.highValueTags.join(', ')}` : ''
@@ -125,6 +138,16 @@ function buildPrompt(
   const outcomes = summary.planningStats.outcomeDistributions
     .map((o) => `${o.decision}: ${o.percentage.toFixed(0)}%`)
     .join(', ')
+
+  const avgDays = summary.planningStats.averageDecisionTimeDays
+  const holdingCostLow  = avgDays != null ? Math.round(avgDays * 300  / 1000) : null
+  const holdingCostHigh = avgDays != null ? Math.round(avgDays * 800  / 1000) : null
+
+  const hs = summary.nearbyContext.heightStats
+  const medianStoreys   = hs ? Math.max(1, Math.round(hs.median / 3)) : null
+  const heightLine      = hs
+    ? `• Heights (m): min ${hs.min}, max ${hs.max}, mean ${hs.mean}, median ${hs.median} → implies ~${medianStoreys}-storey context`
+    : '• Heights: no height data available'
 
   const planContext = planChunks.length > 0
     ? [
@@ -140,6 +163,10 @@ function buildPrompt(
     ? 'The user is a DEVELOPER assessing this site. Focus on: approval likelihood, development constraints, density/typology signals, and investment opportunity.'
     : 'The user is a COUNCIL OFFICER evaluating development proposals. Focus on: policy compliance, constraint management, design quality, and precedent-setting.'
 
+  const holdingCostNote = holdingCostLow != null
+    ? `• Holding cost proxy: £${holdingCostLow}k–£${holdingCostHigh}k per £1m GDV (based on ${avgDays}-day average decision time at £300–£800/day finance cost)`
+    : ''
+
   return `You are a senior UK planning consultant with deep knowledge of local planning policy.
 
 ${roleIntro}
@@ -147,20 +174,23 @@ ${roleIntro}
 SITE EVIDENCE ──────────────────────────────────────────────────────────────────
 
 PLANNING STATISTICS (${council})
-• Total applications: ${summary.planningStats.totalApplications}
+• Total applications: ${summary.planningStats.totalApplications} (domestic/householder works excluded from analysis)
 • Outcomes: ${outcomes || 'no data'}
-• Avg decision time: ${summary.planningStats.averageDecisionTimeDays != null ? `${summary.planningStats.averageDecisionTimeDays} days` : 'unknown'}
+• Avg decision time: ${avgDays != null ? `${avgDays} days` : 'unknown'}
 • Activity level: ${summary.planningStats.activityLevel ?? 'unknown'}
+${holdingCostNote}
 
 STATUTORY CONSTRAINTS
 • Active: ${constraintList}
 
-RECENT PLANNING APPLICATIONS (most recent first)
-${appLines || '  No applications found'}
+RECENT SUBSTANTIVE PLANNING APPLICATIONS (most recent first; garage/loft/householder excluded)
+${appLines || '  No substantive applications found'}
 
-NEARBY BUILT CONTEXT (250 m radius)
+NEARBY BUILT CONTEXT (${summary.nearbyContext.queryRadiusM}m radius)
 • Buildings visible: ${summary.nearbyContext.buildingCount}
 • Land use types: ${summary.nearbyContext.landUseTypes.join(', ') || 'unknown'}
+${heightLine}
+${medianStoreys != null ? `• Unit quantum: a ${medianStoreys}-storey new-build on a typical 200–400m² urban plot could yield ~${medianStoreys * 2}–${medianStoreys * 3} units at 40–50m² NIA each` : ''}
 ${planContext}
 
 TASK ───────────────────────────────────────────────────────────────────────────
@@ -186,12 +216,18 @@ Return ONLY valid JSON — no markdown fences, no preamble, no trailing text:
 }
 
 Rules:
-• Generate 5–7 insight items total
+• Generate 8–12 insight items total, aiming for 2–3 items per category
 • Valid categories: "planning", "constraints", "built_form", "council"
 • Valid priorities: "high" (immediate relevance), "medium" (relevant context), "low" (background)
 • Make each item distinct — no duplication across categories
+• Every sentence in "detail" must contain at least one specific number, percentage, date, or named policy — no vague phrases like "significant" or "notable" without a figure
 • If local plan policies are provided above, cite specific policy codes in detail and evidenceSources
-• Order items with highest-priority first`
+• Order items with highest-priority first
+• Per-category guidance:
+  - planning: lead with approval rate and the most relevant substantive decision types; flag any refused applications and their grounds
+  - constraints: state each active constraint and its direct deliverability implication (e.g. Green Belt → very special circumstances required; Conservation Area → heritage impact assessment mandatory)
+  - built_form: anchor typology recommendation to the median height/storeys context and estimated unit quantum; include specific height numbers
+  - council: frame decision time as programme and cost risk using the holding cost figures above; reference activity level`
 }
 
 // ─── Response parsing ─────────────────────────────────────────────────────────

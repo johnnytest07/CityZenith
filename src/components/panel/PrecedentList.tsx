@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useSiteStore } from "@/stores/siteStore";
 import { getDecisionHex } from "@/lib/colors";
 import { SectionCard } from "./SectionCard";
@@ -17,11 +17,25 @@ export function PrecedentList() {
     insightBullets,
     insightLoading,
     setHoveredPrecedentId,
+    selectedPrecedentId,
+    setSelectedPrecedentId,
   } = useSiteStore();
   const [expanded, setExpanded] = useState(false);
+  const listRef = useRef<HTMLDivElement>(null);
 
-  const insightBullet =
-    insightBullets?.find((b) => b.category === "planning") ?? null;
+  const planningBullets =
+    insightBullets?.filter((b) => b.category === "planning").map((b) => b.text) ?? [];
+
+  // When a map click selects a precedent, open the section and scroll to the card
+  useEffect(() => {
+    if (!selectedPrecedentId) return;
+    setExpanded(true);
+    // Wait one frame for the list to render before scrolling
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`precedent-card-${selectedPrecedentId}`);
+      el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+  }, [selectedPrecedentId]);
 
   if (loadingStates.precedent) {
     return (
@@ -70,8 +84,8 @@ export function PrecedentList() {
           No planning applications found for this site.
         </p>
         <InsightCallout
-          text={insightBullet?.text ?? null}
-          isLoading={insightLoading && !insightBullet}
+          texts={planningBullets}
+          isLoading={insightLoading && planningBullets.length === 0}
         />
       </SectionCard>
     );
@@ -137,11 +151,13 @@ export function PrecedentList() {
       expanded={expanded}
       onToggle={() => setExpanded((e) => !e)}
     >
-      <div className="space-y-2 mt-2 max-h-80 overflow-y-auto pr-1">
+      <div ref={listRef} className="space-y-2 mt-2 max-h-80 overflow-y-auto pr-1">
         {sorted.map((feature, idx) => {
           const p = feature.properties ?? {};
+          const ref = p.planning_reference as string | undefined;
           const decision = p.normalised_decision ?? p.decision ?? null;
           const isBuffered = p.geometrySource === "buffered-centroid";
+          const isSelected = !!ref && ref === selectedPrecedentId;
           const decisionDate = p.decided_date
             ? new Date(p.decided_date).toLocaleDateString("en-GB", {
                 year: "numeric",
@@ -152,17 +168,22 @@ export function PrecedentList() {
 
           return (
             <div
-              key={p.planning_reference ?? idx}
-              className="bg-gray-900 border border-gray-800 rounded-lg p-3 transition-colors hover:border-violet-800/60 cursor-default"
-              onMouseEnter={() =>
-                p.planning_reference &&
-                setHoveredPrecedentId(p.planning_reference)
-              }
+              key={ref ?? idx}
+              id={ref ? `precedent-card-${ref}` : undefined}
+              className={`bg-gray-900 border rounded-lg p-3 transition-colors cursor-default ${
+                isSelected
+                  ? "border-violet-600/70 ring-1 ring-violet-600/40"
+                  : "border-gray-800 hover:border-violet-800/60"
+              }`}
+              onMouseEnter={() => ref && setHoveredPrecedentId(ref)}
               onMouseLeave={() => setHoveredPrecedentId(null)}
+              onClick={() => {
+                if (ref) setSelectedPrecedentId(isSelected ? null : ref);
+              }}
             >
               <div className="flex items-start justify-between gap-2 mb-1">
                 <span className="font-mono text-gray-500 text-xs">
-                  {p.planning_reference}
+                  {ref}
                 </span>
                 {decision && (
                   <span
@@ -202,8 +223,8 @@ export function PrecedentList() {
       </div>
 
       <InsightCallout
-        text={insightBullet?.text ?? null}
-        isLoading={insightLoading && !insightBullet}
+        texts={planningBullets}
+        isLoading={insightLoading && planningBullets.length === 0}
       />
     </SectionCard>
   );
