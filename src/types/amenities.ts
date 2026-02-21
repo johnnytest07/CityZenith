@@ -45,7 +45,12 @@ export const AMENITY_GROUPS: AmenityGroup[] = [
   {
     label: 'Supermarket',
     emoji: '🛒',
-    categories: ['supermarket', 'convenience'],
+    categories: ['supermarket'],
+  },
+  {
+    label: 'Local Shop',
+    emoji: '🏪',
+    categories: ['convenience'],
   },
   {
     label: 'Gym',

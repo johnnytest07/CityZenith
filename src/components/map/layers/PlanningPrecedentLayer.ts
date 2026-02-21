@@ -74,10 +74,11 @@ export function createPlanningPrecedentLayer(
       // (stepped by 1 factor / 10 units) so overlapping circles never fight.
       // The slot base is spaced 500 units apart so no intra-bucket stepping
       // can bleed across into another decision bucket.
-      getPolygonOffset: (f: GeoJSON.Feature): [number, number] => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      getPolygonOffset: ((f: GeoJSON.Feature): [number, number] => {
         const i = featureIndexMap.get(f) ?? 0
         return [baseFactor - i * 0.5, baseUnits - i * 10]
-      },
+      }) as any,
 
       // depthTest off so layers don't occlude the basemap or each other;
       // depthMask off so they don't write to the depth buffer.

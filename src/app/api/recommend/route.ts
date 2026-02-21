@@ -352,9 +352,10 @@ export async function POST(request: NextRequest) {
           typeof opt.approxHeightM !== 'number'
         ) return false
         // Normalise reasoning: accept string (legacy) or array
-        if (typeof opt.reasoning === 'string') {
-          opt.reasoning = opt.reasoning.split(/(?<=\.\s)/).map((s: string) => s.trim()).filter(Boolean)
-        } else if (!Array.isArray(opt.reasoning)) {
+        const rawReasoning = (opt as unknown as { reasoning: unknown }).reasoning
+        if (typeof rawReasoning === 'string') {
+          opt.reasoning = rawReasoning.split(/(?<=\.\s)/).map((s: string) => s.trim()).filter(Boolean)
+        } else if (!Array.isArray(rawReasoning)) {
           opt.reasoning = []
         }
         // Normalise missing/malformed factors to an empty array rather than rejecting

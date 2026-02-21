@@ -7,9 +7,7 @@ import { PrecedentList } from "./PrecedentList";
 import { ConstraintsSummary } from "./ConstraintsSummary";
 import { BuiltFormSummary } from "./BuiltFormSummary";
 import { AmenitiesPanel } from "./AmenitiesPanel";
-import { DevModePanel } from "./DevModePanel";
 import { useSiteStore } from "@/stores/siteStore";
-import { useDevStore } from "@/stores/devStore";
 import { useInsights } from "@/hooks/useInsights";
 
 /**
@@ -22,7 +20,6 @@ import { useInsights } from "@/hooks/useInsights";
 export function SidePanel() {
   const { siteContext, loadingStates, error } = useSiteStore();
   const { insight, isLoading, generateInsights } = useInsights();
-  const { buildMode } = useDevStore();
 
   // Auto-generate once per site after planning data finishes loading
   useEffect(() => {
@@ -52,9 +49,6 @@ export function SidePanel() {
       <div className="flex-1 overflow-y-auto">
         {/* Connectivity always shown first — key context for any development decision */}
         <AmenitiesPanel />
-
-        {/* Build mode recommendation — shown above planning history when active */}
-        {buildMode === "new" && <DevModePanel />}
 
         <PrecedentList />
         <ConstraintsSummary />

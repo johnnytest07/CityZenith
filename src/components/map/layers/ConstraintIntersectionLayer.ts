@@ -46,7 +46,7 @@ function generateStripes(
     for (let s = 0; s <= sampleN; s++) {
       const x = x0 + s * dx
       const y = val - x
-      if (turf.booleanPointInPolygon([x, y], feature)) {
+      if (turf.booleanPointInPolygon([x, y], feature as GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>)) {
         current.push([x, y])
       } else {
         if (current.length >= 2) paths.push({ path: current, color })
@@ -99,13 +99,13 @@ export function buildConstraintLayers(constraints: StatutoryConstraints): Layer[
     for (let j = i + 1; j < activeTypes.length; j++) {
       const typeA = activeTypes[i]
       const typeB = activeTypes[j]
-      const flatA = turf.flatten(constraints[typeA].features! as turf.FeatureCollection)
-      const flatB = turf.flatten(constraints[typeB].features! as turf.FeatureCollection)
+      const flatA = turf.flatten(constraints[typeA].features! as GeoJSON.FeatureCollection)
+      const flatB = turf.flatten(constraints[typeB].features! as GeoJSON.FeatureCollection)
 
       for (const fa of flatA.features) {
         for (const fb of flatB.features) {
           try {
-            const inter = turf.intersect(turf.featureCollection([fa, fb]))
+            const inter = turf.intersect(turf.featureCollection([fa, fb] as GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>[]))
             if (inter) intersectionRecords.push({ typeA, typeB, feature: inter })
           } catch { /* skip degenerate pairs */ }
         }
@@ -151,7 +151,7 @@ export function buildConstraintLayers(constraints: StatutoryConstraints): Layer[
 
     let base: GeoJSON.Feature | null = null
     try {
-      base = turf.union(turf.featureCollection(fc.features as turf.Feature[]))
+      base = turf.union(turf.featureCollection(fc.features as GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>[]))
     } catch {
       pushFullLayer()
       continue
@@ -161,7 +161,7 @@ export function buildConstraintLayers(constraints: StatutoryConstraints): Layer[
     for (const { feature: inter } of relevant) {
       if (!safeFill) break
       try {
-        safeFill = turf.difference(turf.featureCollection([safeFill, inter]))
+        safeFill = turf.difference(turf.featureCollection([safeFill, inter] as GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>[]))
       } catch { /* keep current safeFill */ }
     }
 
