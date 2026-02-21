@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
+import OpenAI from 'openai'
 import type { SiteContext, InsightCategory } from '@/types/siteContext'
 import type { InsightsReport, InsightItem, InsightPriority } from '@/types/insights'
 import { serialiseSiteContext, type SerialisedSiteContext } from '@/lib/serialiseSiteContext'
 
-const GEMINI_BASE    = 'https://generativelanguage.googleapis.com/v1beta'
-const EMBED_MODEL    = 'text-embedding-004'
+const GEMINI_BASE    = 'https://generativelanguage.googleapis.com/v1'
+const EMBED_MODEL    = 'text-embedding-3-small'
 const GEMINI_MODEL   = process.env.GEMINI_MODEL ?? 'gemini-2.5-pro'
 const MONGO_DB       = process.env.MONGODB_DB ?? 'cityzenith'
 const PLAN_COLLECTION   = 'council_plan_chunks'
@@ -20,30 +21,18 @@ interface PlanChunkResult {
   score:       number
 }
 
-async function embedQueryText(text: string, apiKey: string): Promise<number[]> {
-  const res = await fetch(
-    `${GEMINI_BASE}/models/${EMBED_MODEL}:batchEmbedContents?key=${apiKey}`,
-    {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        requests: [{
-          model:    `models/${EMBED_MODEL}`,
-          content:  { parts: [{ text }] },
-          taskType: 'RETRIEVAL_QUERY',
-        }],
-      }),
-    },
-  )
-  if (!res.ok) throw new Error(`Embedding failed: ${res.status}`)
-  const data = await res.json() as { embeddings: Array<{ values: number[] }> }
-  return data.embeddings[0].values
+async function embedQueryText(text: string, openai: OpenAI): Promise<number[]> {
+  const res = await openai.embeddings.create({
+    model: EMBED_MODEL,
+    input: text,
+  })
+  return res.data[0].embedding
 }
 
 async function queryLocalPlan(
   planCorpus: string,
   queryText:  string,
-  apiKey:     string,
+  openai:     OpenAI,
   limit = 6,
 ): Promise<PlanChunkResult[]> {
   if (!process.env.MONGODB_URI) return []
@@ -53,7 +42,7 @@ async function queryLocalPlan(
     const client = await clientPromise
     const db = client.db(MONGO_DB)
 
-    const queryVector = await embedQueryText(queryText, apiKey)
+    const queryVector = await embedQueryText(queryText, openai)
 
     const docs = await db.collection(PLAN_COLLECTION).aggregate([
       {
@@ -249,10 +238,13 @@ function parseInsightsReport(
 // ─── Route handler ────────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
-  const apiKey = process.env.GEMINI_API_KEY
-  if (!apiKey) {
+  const geminiKey = process.env.GEMINI_API_KEY
+  if (!geminiKey) {
     return NextResponse.json({ error: 'GEMINI_API_KEY not configured' }, { status: 503 })
   }
+
+  const openaiKey = process.env.OPENAI_API_KEY
+  const openai = openaiKey ? new OpenAI({ apiKey: openaiKey }) : null
 
   let siteContext: SiteContext
   let role:       'council' | 'developer' = 'developer'
@@ -283,9 +275,11 @@ export async function POST(request: NextRequest) {
 
   // Query local plan if a corpus is available for this council
   let planChunks: PlanChunkResult[] = []
-  if (planCorpus) {
+  if (planCorpus && openai) {
     const searchQuery = buildPlanSearchQuery(summary)
-    planChunks = await queryLocalPlan(planCorpus, searchQuery, apiKey)
+    planChunks = await queryLocalPlan(planCorpus, searchQuery, openai)
+  } else if (planCorpus && !openai) {
+    console.warn('OPENAI_API_KEY not set; skipping local plan vector search')
   }
 
   const prompt = buildPrompt(summary, role, council, planChunks)
@@ -302,7 +296,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const res = await fetch(
-      `${GEMINI_BASE}/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
+      `${GEMINI_BASE}/models/${GEMINI_MODEL}:generateContent?key=${geminiKey}`,
       {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },

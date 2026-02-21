@@ -1,8 +1,9 @@
 'use client'
 
-import { useCallback } from 'react'
+import { useCallback, useEffect } from 'react'
 import { useSiteStore } from '@/stores/siteStore'
 import { useIdentityStore } from '@/stores/identityStore'
+import { useIntelligenceStore } from '@/stores/intelligenceStore'
 import type { SiteContext, InsightBullet } from '@/types/siteContext'
 import type { InsightsReport } from '@/types/insights'
 
@@ -20,6 +21,34 @@ export function useInsights() {
   } = useSiteStore()
 
   const { role, council } = useIdentityStore()
+  const { setDocuments, setLoading, setError, clear } = useIntelligenceStore()
+
+  useEffect(() => {
+    // Only councils with a plan corpus should trigger document fetch
+    if (council?.planCorpus) {
+      const fetchDocs = async () => {
+        setLoading(true)
+        try {
+          const response = await fetch('/api/intelligence/documents', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ planCorpus: council.planCorpus }),
+          })
+          if (!response.ok) {
+            const data = await response.json()
+            throw new Error(data.error || 'Failed to fetch documents.')
+          }
+          const documents = await response.json()
+          setDocuments(documents)
+        } catch (error) {
+          setError(error instanceof Error ? error.message : 'Unknown error')
+        }
+      }
+      fetchDocs()
+    } else {
+      clear()
+    }
+  }, [council, setDocuments, setLoading, setError, clear])
 
   const generateInsights = useCallback(async (siteContext: SiteContext) => {
     setInsightLoading(true)

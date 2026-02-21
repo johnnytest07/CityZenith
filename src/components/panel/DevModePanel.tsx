@@ -1,6 +1,8 @@
 'use client'
 
 import { useDevStore } from '@/stores/devStore'
+import { useIdentityStore } from '@/stores/identityStore'
+import { useState } from 'react'
 
 /**
  * Shown at the top of the side panel when build mode is active.
@@ -15,6 +17,30 @@ export function DevModePanel() {
     setBuildStep,
     switchAlternative,
   } = useDevStore()
+  const { council } = useIdentityStore()
+  const [ingestionStatus, setIngestionStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
+  const [ingestionError, setIngestionError] = useState<string | null>(null)
+
+  const handleIngest = async () => {
+    if (!council) return
+    setIngestionStatus('loading')
+    setIngestionError(null)
+    try {
+      const response = await fetch('/api/intelligence/ingest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ council: council.name }),
+      })
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to start ingestion.')
+      }
+      setIngestionStatus('success')
+    } catch (error) {
+      setIngestionStatus('error')
+      setIngestionError(error instanceof Error ? error.message : 'Unknown error')
+    }
+  }
 
   const { activeIndex, primary, alternatives } = buildRecommendation ?? {
     activeIndex: 0,
@@ -27,6 +53,31 @@ export function DevModePanel() {
 
   return (
     <div className="border-b border-gray-800 bg-violet-950/20">
+      {/* Intelligence Ingestion */}
+      <div className="px-4 py-3 border-b border-gray-800">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-white">Council Intelligence</h3>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Ingest planning documents for <b>{council?.name || '...'}</b>
+            </p>
+          </div>
+          <button
+            onClick={handleIngest}
+            disabled={!council || ingestionStatus === 'loading'}
+            className="px-3 py-1.5 text-xs font-semibold text-white bg-violet-600 rounded-md hover:bg-violet-500 disabled:bg-gray-600 disabled:cursor-not-allowed"
+          >
+            {ingestionStatus === 'loading' ? 'Ingesting...' : 'Ingest'}
+          </button>
+        </div>
+        {ingestionStatus === 'error' && (
+          <p className="text-xs text-red-400 mt-2">Error: {ingestionError}</p>
+        )}
+        {ingestionStatus === 'success' && (
+          <p className="text-xs text-green-400 mt-2">Ingestion pipeline started successfully in the background.</p>
+        )}
+      </div>
+
       {/* Header */}
       <div className="px-4 py-3">
         <div className="flex items-center gap-2 mb-2">

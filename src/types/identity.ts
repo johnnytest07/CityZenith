@@ -19,7 +19,12 @@ export const SUPPORTED_COUNCILS: Council[] = [
   {
     id: 'royal-greenwich',
     name: 'Royal Greenwich',
-    planCorpus: 'Royal Greenwich',
+    planCorpus: 'Royal Borough Greenwich',
+  },
+  {
+    id: 'enfield',
+    name: 'Enfield',
+    planCorpus: 'Enfield',
   },
   {
     id: 'other',
