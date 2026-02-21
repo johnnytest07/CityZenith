@@ -176,8 +176,14 @@ export function useSiteSelection(mapRef: React.RefObject<MapLibreMap | null>) {
         })
         .finally(() => { if (!isStale()) setLoading('constraints', false) })
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [mapRef],
+    [
+      mapRef,
+      initialiseSiteContext,
+      updateSiteContext,
+      setLoading,
+      setError,
+      clearSiteContext,
+    ],
   )
 
   const clearSelection = useCallback(() => {

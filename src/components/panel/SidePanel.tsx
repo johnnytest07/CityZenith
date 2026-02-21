@@ -34,8 +34,14 @@ export function SidePanel() {
       siteContext.planningContextStats !== null;
     if (!hasEvidence) return;
     generateInsights(siteContext);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [siteContext?.siteId, loadingStates.precedent, loadingStates.stats]);
+  }, [
+    siteContext?.siteId,
+    loadingStates.precedent,
+    loadingStates.stats,
+    generateInsights,
+    insight,
+    isLoading,
+  ]);
 
   if (!siteContext) return null;
 

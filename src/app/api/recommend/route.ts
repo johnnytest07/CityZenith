@@ -343,7 +343,7 @@ export async function POST(request: NextRequest) {
 
       const validateOption = (o: unknown): o is BuildingOption => {
         if (typeof o !== 'object' || o === null) return false
-        const opt = o as BuildingOption
+        const opt = o as any
         if (
           typeof opt.buildingType !== 'string' ||
           typeof opt.style !== 'string' ||
@@ -353,7 +353,7 @@ export async function POST(request: NextRequest) {
         ) return false
         // Normalise reasoning: accept string (legacy) or array
         if (typeof opt.reasoning === 'string') {
-          opt.reasoning = opt.reasoning.split(/(?<=\.\s)/).map((s: string) => s.trim()).filter(Boolean)
+          opt.reasoning = String(opt.reasoning).split(/(?<=\.\s)/).map((s: string) => s.trim()).filter(Boolean)
         } else if (!Array.isArray(opt.reasoning)) {
           opt.reasoning = []
         }

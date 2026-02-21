@@ -21,7 +21,7 @@ interface PlanChunkResult {
   score:       number
 }
 
-async function embedQueryText(text: string, openai: OpenAI): Promise<number[]> {
+async function embedQueryText(text: string, openai: any): Promise<number[]> {
   const res = await openai.embeddings.create({
     model: EMBED_MODEL,
     input: text,
@@ -32,7 +32,7 @@ async function embedQueryText(text: string, openai: OpenAI): Promise<number[]> {
 async function queryLocalPlan(
   planCorpus: string,
   queryText:  string,
-  openai:     OpenAI,
+  openai:     any,
   limit = 6,
 ): Promise<PlanChunkResult[]> {
   if (!process.env.MONGODB_URI) return []

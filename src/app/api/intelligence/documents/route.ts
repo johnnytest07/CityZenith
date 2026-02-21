@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { fetchDocumentsByCouncil } from '@/intelligence/src/store'
+import { fetchDocumentsByCouncil } from '@/intelligence/store'
 
 export async function POST(request: Request) {
   const { council, planCorpus } = await request.json()

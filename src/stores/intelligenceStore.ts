@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Document } from '@/intelligence/src/types'
+import type { Document } from '@/intelligence/types'
 
 interface IntelligenceStore {
   documents: Document[]

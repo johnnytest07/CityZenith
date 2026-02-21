@@ -34,7 +34,7 @@ export async function embedDocuments(
       input: inputs,
     });
 
-    response.data.forEach((item, index) => {
+    response.data.forEach((item: any, index: number) => {
       embeddedDocuments.push({
         ...batch[index],
         embedding: item.embedding,
@@ -54,4 +54,15 @@ export async function embedDocuments(
   );
 
   return embeddedDocuments;
+}
+
+/**
+ * Create an embedding for a single text input (helper for queries).
+ */
+export async function createEmbedding(text: string): Promise<number[]> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error('OPENAI_API_KEY environment variable is not set.');
+  const client = new OpenAI({ apiKey });
+  const res = await client.embeddings.create({ model: EMBED_MODEL, input: text });
+  return res.data[0].embedding as number[];
 }

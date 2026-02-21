@@ -46,7 +46,8 @@ function generateStripes(
     for (let s = 0; s <= sampleN; s++) {
       const x = x0 + s * dx
       const y = val - x
-      if (turf.booleanPointInPolygon([x, y], feature)) {
+      // turf expects a Point feature or coordinate wrapped with turf.point
+      if (turf.booleanPointInPolygon(turf.point([x, y]) as any, feature as any)) {
         current.push([x, y])
       } else {
         if (current.length >= 2) paths.push({ path: current, color })
@@ -99,15 +100,20 @@ export function buildConstraintLayers(constraints: StatutoryConstraints): Layer[
     for (let j = i + 1; j < activeTypes.length; j++) {
       const typeA = activeTypes[i]
       const typeB = activeTypes[j]
-      const flatA = turf.flatten(constraints[typeA].features! as turf.FeatureCollection)
-      const flatB = turf.flatten(constraints[typeB].features! as turf.FeatureCollection)
+  const flatA = turf.flatten(constraints[typeA].features! as any)
+  const flatB = turf.flatten(constraints[typeB].features! as any)
 
-      for (const fa of flatA.features) {
-        for (const fb of flatB.features) {
+      for (const fa of (flatA as any).features) {
+        if (!fa?.geometry || (fa.geometry.type !== 'Polygon' && fa.geometry.type !== 'MultiPolygon')) continue
+        for (const fb of (flatB as any).features) {
+          if (!fb?.geometry || (fb.geometry.type !== 'Polygon' && fb.geometry.type !== 'MultiPolygon')) continue
           try {
-            const inter = turf.intersect(turf.featureCollection([fa, fb]))
-            if (inter) intersectionRecords.push({ typeA, typeB, feature: inter })
-          } catch { /* skip degenerate pairs */ }
+            // ensure proper feature collection typing for turf
+            const inter = turf.intersect(turf.featureCollection([fa as any, fb as any]) as any)
+            if (inter) intersectionRecords.push({ typeA, typeB, feature: inter as GeoJSON.Feature })
+          } catch {
+            /* skip degenerate pairs */
+          }
         }
       }
     }
@@ -151,7 +157,7 @@ export function buildConstraintLayers(constraints: StatutoryConstraints): Layer[
 
     let base: GeoJSON.Feature | null = null
     try {
-      base = turf.union(turf.featureCollection(fc.features as turf.Feature[]))
+      base = turf.union(turf.featureCollection(fc.features as any) as any) as GeoJSON.Feature
     } catch {
       pushFullLayer()
       continue
@@ -161,7 +167,7 @@ export function buildConstraintLayers(constraints: StatutoryConstraints): Layer[
     for (const { feature: inter } of relevant) {
       if (!safeFill) break
       try {
-        safeFill = turf.difference(turf.featureCollection([safeFill, inter]))
+        safeFill = turf.difference(turf.featureCollection([safeFill as any, inter as any]) as any) as GeoJSON.Feature | null
       } catch { /* keep current safeFill */ }
     }
 
@@ -184,7 +190,7 @@ export function buildConstraintLayers(constraints: StatutoryConstraints): Layer[
       )
       // Use centroid of the exclusive area for label placement
       try {
-        safeFillByType.set(type, turf.centroid(safeFill) as GeoJSON.Feature)
+        safeFillByType.set(type, turf.centroid(safeFill as any) as GeoJSON.Feature)
       } catch { /* skip label */ }
     }
   }

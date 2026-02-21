@@ -37,8 +37,16 @@ export function InsightsPanel() {
       siteContext.planningContextStats !== null
     if (!hasEvidence) return
     generateInsights(siteContext)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [siteContext?.siteId, loadingStates.precedent, loadingStates.stats])
+  }, [
+    siteContext?.siteId,
+    loadingStates.precedent,
+    loadingStates.stats,
+    generateInsights,
+    insight,
+    insightsReport,
+    isLoading,
+    error,
+  ])
 
   if (!siteContext) return null
 
