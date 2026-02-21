@@ -1,26 +1,36 @@
-'use client'
+"use client";
 
-import { useState } from 'react'
-import { useSiteStore } from '@/stores/siteStore'
-import { getDecisionHex } from '@/lib/colors'
-import { SectionCard } from './SectionCard'
+import { useState } from "react";
+import { useSiteStore } from "@/stores/siteStore";
+import { getDecisionHex } from "@/lib/colors";
+import { SectionCard } from "./SectionCard";
+import { InsightCallout } from "./InsightCallout";
 
 /**
  * Reads planningPrecedentFeatures (raw GeoJSON) from SiteContext.
  * Computes counts and filters AT RENDER-TIME ONLY — nothing stored.
  */
 export function PrecedentList() {
-  const { siteContext, loadingStates, insightBullets } = useSiteStore()
-  const [expanded, setExpanded] = useState(false)
+  const {
+    siteContext,
+    loadingStates,
+    insightBullets,
+    insightLoading,
+    setHoveredPrecedentId,
+  } = useSiteStore();
+  const [expanded, setExpanded] = useState(false);
 
-  const insightBullet = insightBullets?.find((b) => b.category === 'planning') ?? null
+  const insightBullet =
+    insightBullets?.find((b) => b.category === "planning") ?? null;
 
   if (loadingStates.precedent) {
     return (
       <SectionCard
         title="Site Applications"
         scope="100m radius"
-        summary={<span className="text-xs text-gray-700 animate-pulse">Loading…</span>}
+        summary={
+          <span className="text-xs text-gray-700 animate-pulse">Loading…</span>
+        }
         expanded={expanded}
         onToggle={() => setExpanded((e) => !e)}
       >
@@ -40,58 +50,58 @@ export function PrecedentList() {
           ))}
         </div>
       </SectionCard>
-    )
+    );
   }
 
-  const features = siteContext?.planningPrecedentFeatures?.features ?? []
+  const features = siteContext?.planningPrecedentFeatures?.features ?? [];
 
   if (features.length === 0) {
     return (
       <SectionCard
         title="Site Applications"
         scope="100m radius"
-        summary={<span className="text-xs text-gray-600">No applications found</span>}
+        summary={
+          <span className="text-xs text-gray-600">No applications found</span>
+        }
         expanded={expanded}
         onToggle={() => setExpanded((e) => !e)}
       >
         <p className="text-gray-600 text-xs mt-2">
           No planning applications found for this site.
         </p>
-        {insightBullet && (
-          <div className="mt-3 pt-3 border-t border-violet-900/40 flex gap-2">
-            <span className="text-violet-500 shrink-0 mt-0.5">✦</span>
-            <p className="text-xs text-violet-300 leading-relaxed">{insightBullet.text}</p>
-          </div>
-        )}
+        <InsightCallout
+          text={insightBullet?.text ?? null}
+          isLoading={insightLoading && !insightBullet}
+        />
       </SectionCard>
-    )
+    );
   }
 
   // ---- Render-time computation only ----
-  const twoYearsAgo = new Date()
-  twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2)
+  const twoYearsAgo = new Date();
+  twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
 
-  let approvedCount = 0
-  let refusedCount = 0
-  let recentCount = 0
+  let approvedCount = 0;
+  let refusedCount = 0;
+  let recentCount = 0;
 
   for (const f of features) {
-    const d = (f.properties?.normalised_decision ?? '').toLowerCase()
-    if (d.includes('approv')) approvedCount++
-    else if (d.includes('refus') || d.includes('reject')) refusedCount++
+    const d = (f.properties?.normalised_decision ?? "").toLowerCase();
+    if (d.includes("approv")) approvedCount++;
+    else if (d.includes("refus") || d.includes("reject")) refusedCount++;
 
     if (f.properties?.decided_date) {
-      const dt = new Date(f.properties.decided_date)
-      if (!isNaN(dt.getTime()) && dt >= twoYearsAgo) recentCount++
+      const dt = new Date(f.properties.decided_date);
+      if (!isNaN(dt.getTime()) && dt >= twoYearsAgo) recentCount++;
     }
   }
   // --------------------------------------
 
   const sorted = [...features].sort((a, b) => {
-    const da = a.properties?.decided_date ?? ''
-    const db = b.properties?.decided_date ?? ''
-    return db.localeCompare(da)
-  })
+    const da = a.properties?.decided_date ?? "";
+    const db = b.properties?.decided_date ?? "";
+    return db.localeCompare(da);
+  });
 
   return (
     <SectionCard
@@ -99,18 +109,26 @@ export function PrecedentList() {
       scope="100m radius"
       summary={
         <div className="flex items-center gap-1.5 text-xs flex-wrap">
-          <span className="font-semibold text-gray-300 tabular-nums">{features.length}</span>
+          <span className="font-semibold text-gray-300 tabular-nums">
+            {features.length}
+          </span>
           <span className="text-gray-600">total</span>
           <span className="text-gray-700 mx-0.5">·</span>
-          <span className="font-semibold text-green-500 tabular-nums">{approvedCount}</span>
+          <span className="font-semibold text-green-500 tabular-nums">
+            {approvedCount}
+          </span>
           <span className="text-gray-600">approved</span>
           <span className="text-gray-700 mx-0.5">·</span>
-          <span className="font-semibold text-red-500 tabular-nums">{refusedCount}</span>
+          <span className="font-semibold text-red-500 tabular-nums">
+            {refusedCount}
+          </span>
           <span className="text-gray-600">refused</span>
           {recentCount > 0 && (
             <>
               <span className="text-gray-700 mx-0.5">·</span>
-              <span className="font-semibold text-gray-400 tabular-nums">{recentCount}</span>
+              <span className="font-semibold text-gray-400 tabular-nums">
+                {recentCount}
+              </span>
               <span className="text-gray-600">recent</span>
             </>
           )}
@@ -121,24 +139,31 @@ export function PrecedentList() {
     >
       <div className="space-y-2 mt-2 max-h-80 overflow-y-auto pr-1">
         {sorted.map((feature, idx) => {
-          const p = feature.properties ?? {}
-          const decision = p.normalised_decision ?? p.decision ?? null
-          const isBuffered = p.geometrySource === 'buffered-centroid'
+          const p = feature.properties ?? {};
+          const decision = p.normalised_decision ?? p.decision ?? null;
+          const isBuffered = p.geometrySource === "buffered-centroid";
           const decisionDate = p.decided_date
-            ? new Date(p.decided_date).toLocaleDateString('en-GB', {
-                year: 'numeric',
-                month: 'short',
-                day: 'numeric',
+            ? new Date(p.decided_date).toLocaleDateString("en-GB", {
+                year: "numeric",
+                month: "short",
+                day: "numeric",
               })
-            : null
+            : null;
 
           return (
             <div
               key={p.planning_reference ?? idx}
-              className="bg-gray-900 border border-gray-800 rounded-lg p-3"
+              className="bg-gray-900 border border-gray-800 rounded-lg p-3 transition-colors hover:border-violet-800/60 cursor-default"
+              onMouseEnter={() =>
+                p.planning_reference &&
+                setHoveredPrecedentId(p.planning_reference)
+              }
+              onMouseLeave={() => setHoveredPrecedentId(null)}
             >
               <div className="flex items-start justify-between gap-2 mb-1">
-                <span className="font-mono text-gray-500 text-xs">{p.planning_reference}</span>
+                <span className="font-mono text-gray-500 text-xs">
+                  {p.planning_reference}
+                </span>
                 {decision && (
                   <span
                     className="text-xs px-1.5 py-0.5 rounded font-medium flex-shrink-0"
@@ -153,7 +178,7 @@ export function PrecedentList() {
               </div>
 
               {p.proposal && (
-                <p className="text-gray-400 text-xs leading-relaxed line-clamp-2 mb-1">
+                <p className="text-gray-400 text-xs leading-relaxed mb-1">
                   {p.proposal}
                 </p>
               )}
@@ -166,20 +191,20 @@ export function PrecedentList() {
                 )}
                 {decisionDate && <span>{decisionDate}</span>}
                 {isBuffered && (
-                  <span className="text-yellow-700 ml-auto">centroid approx.</span>
+                  <span className="text-yellow-700 ml-auto">
+                    centroid approx.
+                  </span>
                 )}
               </div>
             </div>
-          )
+          );
         })}
       </div>
 
-      {insightBullet && (
-        <div className="mt-3 pt-3 border-t border-violet-900/40 flex gap-2">
-          <span className="text-violet-500 shrink-0 mt-0.5">✦</span>
-          <p className="text-xs text-violet-300 leading-relaxed">{insightBullet.text}</p>
-        </div>
-      )}
+      <InsightCallout
+        text={insightBullet?.text ?? null}
+        isLoading={insightLoading && !insightBullet}
+      />
     </SectionCard>
-  )
+  );
 }

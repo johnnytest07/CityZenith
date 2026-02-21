@@ -129,15 +129,15 @@ export function normaliseApplicationsToFeatures(
         }
         geometrySource = 'application-geometry'
       } else if (parsedGeom.type === 'Point') {
-        // IBEX returned a point geometry — buffer it to a 50m circle
-        polygon = bufferCentroid(parsedGeom.coordinates as [number, number], 0.05)
+        // IBEX returned a point geometry — buffer it to a 15m circle
+        polygon = bufferCentroid(parsedGeom.coordinates as [number, number], 0.015)
         geometrySource = 'buffered-centroid'
       }
     } else if (app.centre_point) {
       // Fallback: use the centre_point extension field if main geometry is absent
       const centreGeom = parseWktOsgb(app.centre_point)
       if (centreGeom?.type === 'Point') {
-        polygon = bufferCentroid(centreGeom.coordinates as [number, number], 0.05)
+        polygon = bufferCentroid(centreGeom.coordinates as [number, number], 0.015)
         geometrySource = 'buffered-centroid'
       }
     }
