@@ -2,3 +2,6 @@
 .next/
 node_modules
 .claude/
+
+# Local plan PDFs (large binary files — store externally)
+*.pdf
