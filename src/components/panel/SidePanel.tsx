@@ -5,6 +5,7 @@ import { PlanningStats } from './PlanningStats'
 import { PrecedentList } from './PrecedentList'
 import { ConstraintsSummary } from './ConstraintsSummary'
 import { BuiltFormSummary } from './BuiltFormSummary'
+import { InsightsPanel } from './InsightsPanel'
 import { useSiteStore } from '@/stores/siteStore'
 
 /**
@@ -30,6 +31,7 @@ export function SidePanel() {
         <PrecedentList />
         <ConstraintsSummary />
         <BuiltFormSummary />
+        <InsightsPanel />
         <PlanningStats />
       </div>
     </div>

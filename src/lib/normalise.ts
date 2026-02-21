@@ -1,8 +1,72 @@
 import type { PlanningApplication } from '@/types/ibex'
+import type { DeveloperMetrics } from '@/types/siteContext'
 import { osgbToWgs84 } from './coords'
 import { bufferCentroid } from './geometry'
 
 export type GeometrySource = 'application-geometry' | 'buffered-centroid'
+
+// ─── Developer metrics ────────────────────────────────────────────────────
+
+const HIGH_VALUE_KEYWORDS = [
+  'HMO',
+  'Conversion',
+  'New Build',
+  'AirBnB',
+  'Demolition',
+  'Change of Use',
+] as const
+
+const COMPLEX_APP_TYPES = [
+  'full',
+  'outline',
+  'listed-building-consent',
+  'conservation-area-consent',
+]
+
+function computeComplexityScore(
+  applicationType: string | null,
+  proposal: string | null,
+): 'High' | 'Medium' | 'Low' {
+  const isComplexType = applicationType
+    ? COMPLEX_APP_TYPES.some((t) => applicationType.toLowerCase().includes(t))
+    : false
+  const isLongProposal = (proposal?.length ?? 0) > 200
+  if (isComplexType && isLongProposal) return 'High'
+  if (isComplexType || isLongProposal) return 'Medium'
+  return 'Low'
+}
+
+function computeHighValueTags(proposal: string | null): string[] {
+  if (!proposal) return []
+  const lower = proposal.toLowerCase()
+  return HIGH_VALUE_KEYWORDS.filter((kw) => lower.includes(kw.toLowerCase()))
+}
+
+function computeDecisionSpeedDays(
+  receivedDate: string | null,
+  decisionDate: string | null,
+): number | null {
+  if (!receivedDate || !decisionDate) return null
+  const received = Date.parse(receivedDate)
+  const decided = Date.parse(decisionDate)
+  if (isNaN(received) || isNaN(decided)) return null
+  return Math.round((decided - received) / 86_400_000)
+}
+
+/**
+ * Compute developer intelligence metrics from raw application properties.
+ * Called during normalisation so the visualization layer can drive styling
+ * without re-computing per render.
+ */
+export function enrichApplication(app: PlanningApplication): DeveloperMetrics {
+  const highValueTags = computeHighValueTags(app.proposal)
+  return {
+    complexityScore: computeComplexityScore(app.normalised_application_type, app.proposal),
+    isHighValue: highValueTags.length > 0,
+    highValueTags,
+    decisionSpeedDays: computeDecisionSpeedDays(app.received_date, app.decision_date),
+  }
+}
 
 /**
  * Parse a WKT geometry string in EPSG:27700 → GeoJSON geometry in WGS84.

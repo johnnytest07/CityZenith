@@ -2,6 +2,24 @@ import type { PlanningContextStats } from './ibex'
 import type { StatutoryConstraints } from './constraints'
 
 /**
+ * Computed at normalisation time and stored on each planning precedent feature.
+ *
+ * This is an intentional exception to the raw-evidence-only rule for SiteContext.
+ * The metrics are derived from application properties (not spatial data) and
+ * stored here so the visualization layer can drive styling without re-computing.
+ */
+export interface DeveloperMetrics {
+  /** Complexity based on application_type and proposal length */
+  complexityScore: 'High' | 'Medium' | 'Low'
+  /** True if proposal contains at least one high-value keyword */
+  isHighValue: boolean
+  /** Which high-value keywords were matched (e.g. 'HMO', 'New Build') */
+  highValueTags: string[]
+  /** Calendar days between received_date and decision_date, or null if either is missing */
+  decisionSpeedDays: number | null
+}
+
+/**
  * SiteContext — the primary domain object.
  *
  * Stores ONLY raw spatial evidence tied to the selected parcel.
