@@ -3,6 +3,7 @@
 import { MapCanvas } from "./MapCanvas";
 import { MapPrompt } from "./MapPrompt";
 import { BuildingHoverCard } from "./BuildingHoverCard";
+import { MapLayerToggle } from "./MapLayerToggle";
 import { SidePanel } from "@/components/panel/SidePanel";
 import { BuildPanel } from "@/components/panel/BuildPanel";
 import {
@@ -39,6 +40,7 @@ export function MapShell() {
           <MapCanvas />
           {!hasSite && <MapPrompt showHint />}
           <BuildingHoverCard />
+          <MapLayerToggle />
           <IdentityBadge />
         </div>
 

@@ -21,6 +21,8 @@ import { buildConstraintLayers } from "./layers/ConstraintIntersectionLayer";
 import { createSiteHighlightLayer } from "./layers/SiteHighlightLayer";
 import { createProposedBuildingLayer } from "./layers/ProposedBuildingLayer";
 import { createDrawingLayers } from "./layers/DrawingLayer";
+import { createMarketValueLayer } from "./layers/MarketValueLayer";
+import { useMarketValue } from "@/hooks/useMarketValue";
 import {
   polygonIntersectsBuilding,
   calculatePolygonArea,
@@ -258,7 +260,7 @@ async function addCouncilBoundaries(
 
 export function MapCanvas() {
   const mapRef = useRef<MapRef>(null);
-  const { viewState, setViewState, setBounds } = useMapStore();
+  const { viewState, setViewState, setBounds, marketValueEnabled, bounds } = useMapStore();
   const {
     siteContext,
     insight,
@@ -289,6 +291,8 @@ export function MapCanvas() {
   } = useDevStore();
 
   const mapLibreRef = useRef<MapLibreMap | null>(null);
+
+  const { hexData: marketHexData } = useMarketValue(marketValueEnabled, bounds);
 
   const { selectSite } = useSiteSelection(mapLibreRef);
   const { role, council } = useIdentityStore();
@@ -552,6 +556,33 @@ export function MapCanvas() {
       // Proposed building — hover card handles display; suppress deck.gl tooltip
       if (layerId === "proposed-building") return null;
 
+      // ── Market value hex ────────────────────────────────────────
+      if (layerId === "market-value-hex") {
+        const props = (info.object as GeoJSON.Feature).properties;
+        if (!props?.relativeScore) return null;
+        const { medianPrice, relativeScore, txCount, growth1yr, growth3yr } = props as {
+          medianPrice: number;
+          relativeScore: number;
+          txCount: number;
+          growth1yr: number | null;
+          growth3yr: number | null;
+        };
+        const pct = (v: number) => `${v >= 0 ? "+" : ""}${(v * 100).toFixed(0)}%`;
+        const fmt = (v: number) =>
+          `£${v.toLocaleString("en-GB", { maximumFractionDigits: 0 })}`;
+        return {
+          html: `<div style="background:rgba(17,24,39,0.92);border:1px solid rgba(75,85,99,0.6);border-radius:8px;padding:10px 12px;font-family:system-ui;font-size:12px;line-height:1.6;color:#e5e7eb;min-width:180px">
+            <div style="font-weight:700;margin-bottom:4px">Market Value</div>
+            <div>Median Price (250m): <b>${fmt(medianPrice)}</b></div>
+            <div>vs Borough Median: <b style="color:${relativeScore < 0 ? "#60a5fa" : "#fb923c"}">${pct(relativeScore)}</b></div>
+            ${growth1yr != null ? `<div>1yr Growth: <b>${pct(growth1yr)}</b></div>` : ""}
+            ${growth3yr != null ? `<div>3yr Growth: <b>${pct(growth3yr)}</b></div>` : ""}
+            <div style="color:#6b7280;margin-top:4px">${txCount} transactions</div>
+          </div>`,
+          style: { background: "none", border: "none", padding: "0" } as Record<string, string>,
+        };
+      }
+
       // ── Planning precedent ──────────────────────────────────────
       // Layer IDs are planning-precedent-{slot} where slot ∈ undetermined|approved|refused
       if (layerId.startsWith("planning-precedent-")) {
@@ -643,9 +674,14 @@ export function MapCanvas() {
   );
 
   const deckLayers = useMemo((): Layer[] => {
-    if (!siteContext) return [];
-
     const layers: Layer[] = [];
+
+    // --- Market value hex grid (bottom — beneath all other layers) ---
+    if (marketValueEnabled && marketHexData) {
+      layers.push(createMarketValueLayer(marketHexData));
+    }
+
+    if (!siteContext) return layers;
 
     // --- Statutory constraints (bottom) ---
     layers.push(...buildConstraintLayers(siteContext.statutoryConstraints));
@@ -799,6 +835,8 @@ export function MapCanvas() {
     setHoverInfo,
     hoveredPrecedentId,
     selectedAmenity,
+    marketValueEnabled,
+    marketHexData,
   ]);
 
   // Popup shows for the panel-hovered precedent OR the map-clicked one.
