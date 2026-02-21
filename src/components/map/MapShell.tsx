@@ -32,7 +32,7 @@ export function MapShell() {
       {/* Map area */}
       <div className="relative flex-1 min-w-0">
         <MapCanvas />
-        <MapPrompt visible={!hasSite} />
+        <MapPrompt showHint={!hasSite} />
         <BuildingHoverCard />
       </div>
 
