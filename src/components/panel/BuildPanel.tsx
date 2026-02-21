@@ -84,9 +84,17 @@ function AltRow({
       {/* Expanded detail when active */}
       {isActive && (
         <div className="mt-2 pt-2 border-t border-gray-800/60 space-y-1">
-          <p className="text-[11px] text-gray-400 leading-relaxed line-clamp-3">
-            {option.reasoning}
-          </p>
+          <ul className="space-y-0.5 mb-1">
+            {option.reasoning.map((point, i) => (
+              <li
+                key={i}
+                className="text-[11px] text-gray-400 leading-relaxed flex gap-1.5"
+              >
+                <span className="text-gray-600 shrink-0 mt-0.5">•</span>
+                <span>{point}</span>
+              </li>
+            ))}
+          </ul>
           {option.factors.slice(0, 3).map((f, i) => (
             <FactorRow key={i} factor={f} />
           ))}
@@ -223,60 +231,63 @@ export function BuildPanel() {
         {buildStep === "result" && active && primary && (
           <div className="space-y-3">
             {/* Primary card */}
-            <div className="rounded-xl border border-violet-600/50 bg-violet-950/20 overflow-hidden">
+            <div
+              className={`rounded-xl border overflow-hidden transition-colors ${activeIndex === 0 ? "border-violet-600/50 bg-violet-950/20" : "border-gray-800 bg-gray-900/40"}`}
+            >
               {/* Card header */}
               <div className="px-3 pt-3 pb-2">
                 <div className="flex items-start justify-between gap-2 mb-0.5">
                   <p className="text-sm font-semibold text-white leading-tight">
-                    {activeIndex === 0
-                      ? primary.buildingType
-                      : active.buildingType}
+                    {primary.buildingType}
                   </p>
-                  {activeIndex === 0 && (
-                    <span className="shrink-0 text-[9px] font-bold bg-violet-700/50 text-violet-200 border border-violet-600/30 px-1.5 py-0.5 rounded-full uppercase tracking-wide">
-                      Recommended
-                    </span>
-                  )}
+                  <span
+                    className={`shrink-0 text-[9px] font-bold border px-1.5 py-0.5 rounded-full uppercase tracking-wide transition-colors ${activeIndex === 0 ? "bg-violet-700/50 text-violet-200 border-violet-600/30" : "bg-gray-800 text-gray-500 border-gray-700"}`}
+                  >
+                    Recommended
+                  </span>
                 </div>
                 <p className="text-[11px] text-gray-500 mb-2">
-                  {activeIndex === 0 ? primary.style : active.style}
+                  {primary.style}
                 </p>
 
                 {/* Stats */}
                 <div className="flex gap-3">
-                  <StatPill
-                    icon="↑"
-                    value={`${activeIndex === 0 ? primary.storeys : active.storeys} storeys`}
-                  />
+                  <StatPill icon="↑" value={`${primary.storeys} storeys`} />
                   {displayFootprint && (
                     <StatPill icon="⬛" value={`${displayFootprint}m²`} />
                   )}
                   <StatPill
                     icon="◆"
-                    value={`${(activeIndex === 0 ? primary.approxHeightM : active.approxHeightM).toFixed(1)}m`}
+                    value={`${primary.approxHeightM.toFixed(1)}m`}
                   />
                 </div>
               </div>
 
               {/* Reasoning */}
               <div className="px-3 pb-2 border-t border-gray-800/50 pt-2">
-                <p className="text-[11px] text-gray-400 leading-relaxed">
-                  {activeIndex === 0 ? primary.reasoning : active.reasoning}
-                </p>
+                <ul className="space-y-1">
+                  {primary.reasoning.map((point, i) => (
+                    <li
+                      key={i}
+                      className="text-[11px] text-gray-400 leading-relaxed flex gap-1.5"
+                    >
+                      <span className="text-gray-600 shrink-0 mt-0.5">•</span>
+                      <span>{point}</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
 
               {/* Factors — max 4, label/value rows */}
-              {(activeIndex === 0 ? primary : active).factors.length > 0 && (
+              {primary.factors.length > 0 && (
                 <div className="px-3 pb-3 border-t border-gray-800/50 pt-2">
                   <p className="text-[9px] uppercase tracking-widest text-gray-600 mb-1.5">
                     Influencing factors
                   </p>
                   <div className="space-y-0">
-                    {(activeIndex === 0 ? primary : active).factors
-                      .slice(0, 4)
-                      .map((f, i) => (
-                        <FactorRow key={i} factor={f} />
-                      ))}
+                    {primary.factors.slice(0, 4).map((f, i) => (
+                      <FactorRow key={i} factor={f} />
+                    ))}
                   </div>
                 </div>
               )}

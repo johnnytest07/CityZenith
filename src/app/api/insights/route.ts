@@ -102,18 +102,65 @@ function buildPrompt(
     .map(([type]) => type)
     .join(', ') || 'none identified'
 
-  const appLines = summary.recentApplications
+  // Filter out domestic/householder works — not relevant for site assessment
+  const substantiveApps = summary.recentApplications.filter((a) => {
+    const p = a.proposal.toLowerCase()
+    return !(
+      p.includes('garage conversion') ||
+      p.includes('loft conversion') ||
+      p.includes('single storey extension') ||
+      p.includes('rear extension') ||
+      p.includes('side extension') ||
+      p.includes('householder')
+    )
+  })
+
+  const appLines = substantiveApps
     .slice(0, 10)
     .map((a) => {
-      const tags  = a.isHighValue ? ` | HIGH VALUE: ${a.highValueTags.join(', ')}` : ''
-      const speed = a.decisionSpeedDays != null ? ` | ${a.decisionSpeedDays}d` : ''
-      return `  • [${a.decision ?? 'pending'}] ${a.proposal.slice(0, 140)} (${a.applicationType ?? 'unknown type'}, ${a.complexityScore}${tags}${speed})`
+      const tags    = a.isHighValue ? ` | HIGH VALUE: ${a.highValueTags.join(', ')}` : ''
+      const speed   = a.decisionSpeedDays != null ? ` | ${a.decisionSpeedDays}d` : ''
+      const units   = a.totalUnits != null ? ` | ${a.totalUnits} units` : (a.numNewHouses != null ? ` | ${a.numNewHouses} homes` : '')
+      const mix     = a.unitMixSummary ? ` [${a.unitMixSummary}]` : ''
+      const afford  = a.affordableUnits != null && a.totalUnits != null && a.totalUnits > 0
+        ? ` | ${Math.round((a.affordableUnits / a.totalUnits) * 100)}% affordable`
+        : ''
+      const comments = a.numComments != null ? ` | ${a.numComments} comments` : ''
+      const appeal  = a.appealDecision ? ` | APPEAL: ${a.appealDecision}` : ''
+      return `  • [${a.decision ?? 'pending'}] ${a.proposal.slice(0, 120)} (${a.applicationType ?? 'unknown type'}, ${a.complexityScore}${tags}${speed}${units}${mix}${afford}${comments}${appeal})`
     })
     .join('\n')
 
   const outcomes = summary.planningStats.outcomeDistributions
     .map((o) => `${o.decision}: ${o.percentage.toFixed(0)}%`)
     .join(', ')
+
+  const avgDays = summary.planningStats.averageDecisionTimeDays
+  const holdingCostLow  = avgDays != null ? Math.round(avgDays * 300  / 1000) : null
+  const holdingCostHigh = avgDays != null ? Math.round(avgDays * 800  / 1000) : null
+
+  // Per-project-type decision times
+  const decisionByType = Object.entries(summary.planningStats.decisionTimeByType)
+    .map(([type, days]) => `${type}: ${days}d`)
+    .join(', ')
+
+  // Council pipeline
+  const pl = summary.pipeline
+  const pipelineSection = pl
+    ? `
+BOROUGH-WIDE HOUSING PIPELINE (${pl.councilName}, last ${pl.periodYears} years, approved residential only)
+• ${pl.schemeCount} approved schemes totalling ${pl.totalNewHomesApproved.toLocaleString()} new homes
+• Project type split: ${pl.projectTypeSplit}
+• Average affordability ratio: ${pl.avgAffordabilityPct != null ? `${pl.avgAffordabilityPct}% affordable` : 'insufficient data'}
+• Largest approved schemes:
+${pl.largestSchemes.map((s) => `  - ${s.heading} (${s.units} units, ${s.decidedYear})`).join('\n')}`
+    : ''
+
+  const hs = summary.nearbyContext.heightStats
+  const medianStoreys   = hs ? Math.max(1, Math.round(hs.median / 3)) : null
+  const heightLine      = hs
+    ? `• Heights (m): min ${hs.min}, max ${hs.max}, mean ${hs.mean}, median ${hs.median} → implies ~${medianStoreys}-storey context`
+    : '• Heights: no height data available'
 
   const planContext = planChunks.length > 0
     ? [
@@ -129,6 +176,10 @@ function buildPrompt(
     ? 'The user is a DEVELOPER assessing this site. Focus on: approval likelihood, development constraints, density/typology signals, and investment opportunity.'
     : 'The user is a COUNCIL OFFICER evaluating development proposals. Focus on: policy compliance, constraint management, design quality, and precedent-setting.'
 
+  const holdingCostNote = holdingCostLow != null
+    ? `• Holding cost proxy: £${holdingCostLow}k–£${holdingCostHigh}k per £1m GDV (based on ${avgDays}-day average decision time at £300–£800/day finance cost)`
+    : ''
+
   return `You are a senior UK planning consultant with deep knowledge of local planning policy.
 
 ${roleIntro}
@@ -136,20 +187,30 @@ ${roleIntro}
 SITE EVIDENCE ──────────────────────────────────────────────────────────────────
 
 PLANNING STATISTICS (${council})
-• Total applications: ${summary.planningStats.totalApplications}
+• Total applications: ${summary.planningStats.totalApplications} (domestic/householder works excluded from analysis)
 • Outcomes: ${outcomes || 'no data'}
-• Avg decision time: ${summary.planningStats.averageDecisionTimeDays != null ? `${summary.planningStats.averageDecisionTimeDays} days` : 'unknown'}
+• Avg decision time: ${avgDays != null ? `${avgDays} days` : 'unknown'}${decisionByType ? ` (by type: ${decisionByType})` : ''}
+• New homes approved (5yr): ${summary.planningStats.newHomesApproved5yr ?? 'unknown'}
 • Activity level: ${summary.planningStats.activityLevel ?? 'unknown'}
+${holdingCostNote}
 
 STATUTORY CONSTRAINTS
 • Active: ${constraintList}
 
-RECENT PLANNING APPLICATIONS (most recent first)
-${appLines || '  No applications found'}
+RECENT SUBSTANTIVE PLANNING APPLICATIONS (most recent first; garage/loft/householder excluded)
+${appLines || '  No substantive applications found'}
 
-NEARBY BUILT CONTEXT (250 m radius)
+NEARBY BUILT CONTEXT (${summary.nearbyContext.queryRadiusM}m radius)
 • Buildings visible: ${summary.nearbyContext.buildingCount}
 • Land use types: ${summary.nearbyContext.landUseTypes.join(', ') || 'unknown'}
+${heightLine}
+${medianStoreys != null ? `• Unit quantum: a ${medianStoreys}-storey new-build on a typical 200–400m² urban plot could yield ~${medianStoreys * 2}–${medianStoreys * 3} units at 40–50m² NIA each` : ''}
+
+CONNECTIVITY & AMENITIES (1km radius, OSM data)
+${summary.amenities.length > 0
+  ? summary.amenities.map((a) => `• ${a.label}: ${a.nearest}`).join('\n')
+  : '• No amenity data available'}
+${pipelineSection}
 ${planContext}
 
 TASK ───────────────────────────────────────────────────────────────────────────
@@ -175,12 +236,19 @@ Return ONLY valid JSON — no markdown fences, no preamble, no trailing text:
 }
 
 Rules:
-• Generate 5–7 insight items total
-• Valid categories: "planning", "constraints", "built_form", "council"
+• Generate 10–14 insight items total, aiming for 2–3 items per category
+• Valid categories: "planning", "constraints", "built_form", "council", "connectivity"
 • Valid priorities: "high" (immediate relevance), "medium" (relevant context), "low" (background)
 • Make each item distinct — no duplication across categories
+• Every sentence in "detail" must contain at least one specific number, percentage, distance, or named policy — no vague phrases like "significant" or "notable" without a figure
 • If local plan policies are provided above, cite specific policy codes in detail and evidenceSources
-• Order items with highest-priority first`
+• Order items with highest-priority first
+• Per-category guidance:
+  - planning: lead with approval rate and the most relevant substantive decision types; flag any refused applications, their grounds, and whether appeals overturned them; if unit mix data is present cite actual bedroom mix and affordability ratio being approved nearby
+  - constraints: state each active constraint and its direct deliverability implication (e.g. Green Belt → very special circumstances required; Conservation Area → heritage impact assessment mandatory)
+  - built_form: anchor typology recommendation to the median height/storeys context and estimated unit quantum; include specific height numbers; if nearby schemes have floor area data, reference GIA benchmarks
+  - council: frame decision time as programme and cost risk using the holding cost figures above; cite per-project-type decision times where available (large residential takes longer than home improvement); if borough pipeline data is present, contextualise against total new homes approved and affordability ratio required
+  - connectivity: assess public transport accessibility using the actual station names and walking times in the data; flag any gaps (e.g. nearest rail >800m, no bus within 400m); note amenity completeness (supermarket, school, green space) and any planning implications such as car-dependency risk or S106 contributions toward transport`
 }
 
 // ─── Response parsing ─────────────────────────────────────────────────────────
@@ -201,7 +269,7 @@ function parseInsightsReport(
 
     if (!parsed.summary || !Array.isArray(parsed.items)) return null
 
-    const validCategories: InsightCategory[] = ['planning', 'constraints', 'built_form', 'council']
+    const validCategories: InsightCategory[] = ['planning', 'constraints', 'built_form', 'council', 'connectivity']
     const validPriorities: InsightPriority[]  = ['high', 'medium', 'low']
 
     const items: InsightItem[] = (parsed.items as Record<string, unknown>[])
@@ -336,7 +404,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Backward-compatible bullets + raw for legacy consumers
-    const validCategories: InsightCategory[] = ['planning', 'constraints', 'built_form', 'council']
+    const validCategories: InsightCategory[] = ['planning', 'constraints', 'built_form', 'council', 'connectivity']
     const bullets = report.items
       .filter((item) => validCategories.includes(item.category))
       .map((item) => ({ category: item.category, text: item.headline }))

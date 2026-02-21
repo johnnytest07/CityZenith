@@ -1,7 +1,12 @@
-import type { PlanningContextStats } from './ibex'
+import type { PlanningContextStats, CouncilPipeline } from './ibex'
 import type { StatutoryConstraints } from './constraints'
+import type { NearbyAmenity } from './amenities'
 
-export type InsightCategory = 'planning' | 'constraints' | 'built_form' | 'council'
+export type { CouncilPipeline }
+
+export type { NearbyAmenity }
+
+export type InsightCategory = 'planning' | 'constraints' | 'built_form' | 'council' | 'connectivity'
 export interface InsightBullet { category: InsightCategory; text: string }
 
 /**
@@ -57,6 +62,19 @@ export interface SiteContext {
    * No derived values stored here — computed at render-time only.
    */
   nearbyContextFeatures: NearbyContextFeatures
+
+  /**
+   * Nearby amenities fetched from Overpass API (OSM) within 1km.
+   * Sorted by distance ascending. Empty array until fetch completes.
+   */
+  nearbyAmenities: NearbyAmenity[]
+
+  /**
+   * Borough-wide approved residential pipeline from IBEX /applications.
+   * Only populated for supported councils (Royal Greenwich, Enfield).
+   * Null until fetch completes or if council not supported.
+   */
+  councilPipeline: CouncilPipeline | null
 }
 
 export interface NearbyContextFeatures {
@@ -74,4 +92,6 @@ export interface SiteLoadingStates {
   stats: boolean
   constraints: boolean
   contextFeatures: boolean
+  amenities: boolean
+  pipeline: boolean
 }

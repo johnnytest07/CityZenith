@@ -3,12 +3,13 @@
 import { useCallback, useRef } from 'react'
 import type { Map as MapLibreMap } from 'maplibre-gl'
 import { useSiteStore } from '@/stores/siteStore'
-import { searchByPolygon, getStats } from '@/lib/ibexClient'
+import { searchByPolygon, getStats, fetchCouncilPipeline, isPipelineCouncil } from '@/lib/ibexClient'
 import { polygonToOsgbCoords } from '@/lib/coords'
 import { normaliseApplicationsToFeatures } from '@/lib/normalise'
 import { bufferClickPoint } from '@/lib/geometry'
 import { fetchConstraintsForSite } from './useConstraintFetch'
 import { getBuiltFormFeatures } from './useBuiltForm'
+import { fetchNearbyAmenities } from '@/lib/amenities'
 
 /**
  * Combines an AbortSignal with a timeout so requests are cancelled either
@@ -85,6 +86,22 @@ export function useSiteSelection(mapRef: React.RefObject<MapLibreMap | null>) {
       // Signal with a hard 20s timeout — prevents any single request hanging the browser
       const searchSignal = withTimeout(controller.signal, 20_000)
       const constraintSignal = withTimeout(controller.signal, 15_000)
+      const amenitySignal = withTimeout(controller.signal, 20_000)
+      const pipelineSignal = withTimeout(controller.signal, 30_000)
+
+      // --- 7. Nearby amenities (Overpass API — runs in parallel) ---
+      fetchNearbyAmenities(lngLat[1], lngLat[0], amenitySignal)
+        .then((nearbyAmenities) => {
+          if (!isStale()) {
+            console.log(`[selectSite:${siteId.slice(0,8)}] amenities: ${nearbyAmenities.length} found`)
+            updateSiteContext({ nearbyAmenities })
+          }
+        })
+        .catch((err) => {
+          if (isAborted() || (err instanceof Error && err.name === 'AbortError')) return
+          console.warn('Amenity fetch error (non-fatal):', err)
+        })
+        .finally(() => { if (!isStale()) setLoading('amenities', false) })
 
       // --- 5. IBEX /search → precedent features, then /stats using council_id ---
       searchByPolygon(searchPolygon27700, searchSignal)
@@ -109,8 +126,27 @@ export function useSiteSelection(mapRef: React.RefObject<MapLibreMap | null>) {
                 console.warn('IBEX stats error (non-fatal):', err)
               })
               .finally(() => { if (!isStale()) setLoading('stats', false) })
+
+            // Council pipeline — only for supported councils (Royal Greenwich, Enfield)
+            if (isPipelineCouncil(councilId)) {
+              fetchCouncilPipeline(councilId, pipelineSignal)
+                .then((councilPipeline) => {
+                  if (!isStale()) {
+                    console.log(`[selectSite:${siteId.slice(0,8)}] pipeline: ${councilPipeline.applications.length} approved schemes`)
+                    updateSiteContext({ councilPipeline })
+                  }
+                })
+                .catch((err) => {
+                  if (isAborted() || (err instanceof Error && err.name === 'AbortError')) return
+                  console.warn('Council pipeline fetch error (non-fatal):', err)
+                })
+                .finally(() => { if (!isStale()) setLoading('pipeline', false) })
+            } else {
+              if (!isStale()) setLoading('pipeline', false)
+            }
           } else {
             if (!isStale()) setLoading('stats', false)
+            if (!isStale()) setLoading('pipeline', false)
           }
         })
         .catch((err) => {

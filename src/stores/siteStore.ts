@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { SiteContext, SiteLoadingStates, InsightBullet } from '@/types/siteContext'
 import type { InsightsReport } from '@/types/insights'
+import type { NearbyAmenity } from '@/types/amenities'
 import { emptyConstraints } from '@/types/constraints'
 
 interface SiteStore {
@@ -30,6 +31,12 @@ interface SiteStore {
   hoveredPrecedentId: string | null
 
   /**
+   * planning_reference selected by clicking a precedent polygon on the map.
+   * Persists until a new site is selected. PrecedentList scrolls to + highlights this card.
+   */
+  selectedPrecedentId: string | null
+
+  /**
    * Initialise a new SiteContext with siteId + siteGeometry.
    * Called at the start of site selection to open the panel immediately.
    */
@@ -55,6 +62,11 @@ interface SiteStore {
   clearInsight: () => void
 
   setHoveredPrecedentId: (id: string | null) => void
+  setSelectedPrecedentId: (id: string | null) => void
+
+  /** Amenity selected by clicking a row in the connectivity panel. Drives map flyTo + marker. */
+  selectedAmenity: NearbyAmenity | null
+  setSelectedAmenity: (amenity: NearbyAmenity | null) => void
 }
 
 const DEFAULT_LOADING: SiteLoadingStates = {
@@ -62,6 +74,8 @@ const DEFAULT_LOADING: SiteLoadingStates = {
   stats: false,
   constraints: false,
   contextFeatures: false,
+  amenities: false,
+  pipeline: false,
 }
 
 export const useSiteStore = create<SiteStore>((set) => ({
@@ -74,6 +88,8 @@ export const useSiteStore = create<SiteStore>((set) => ({
   insightBullets: null,
   insightsReport: null,
   hoveredPrecedentId: null,
+  selectedPrecedentId: null,
+  selectedAmenity: null,
 
   initialiseSiteContext: (siteId, siteGeometry) =>
     set({
@@ -88,9 +104,11 @@ export const useSiteStore = create<SiteStore>((set) => ({
           landuse: { type: 'FeatureCollection', features: [] },
           queryRadiusM: 250,
         },
+        nearbyAmenities: [],
+        councilPipeline: null,
       },
       // Set all loading states immediately so skeletons appear on first render
-      loadingStates: { precedent: true, stats: true, constraints: true, contextFeatures: false },
+      loadingStates: { precedent: true, stats: true, constraints: true, contextFeatures: false, amenities: true, pipeline: true },
       error: null,
       // Always reset AI insights on every new site selection so the panel
       // re-generates for the new site's evidence rather than showing stale results.
@@ -99,6 +117,8 @@ export const useSiteStore = create<SiteStore>((set) => ({
       insightError: null,
       insightBullets: null,
       hoveredPrecedentId: null,
+      selectedPrecedentId: null,
+      selectedAmenity: null,
     }),
 
   updateSiteContext: (partial) =>
@@ -120,6 +140,8 @@ export const useSiteStore = create<SiteStore>((set) => ({
       insightBullets: null,
       insightsReport: null,
       hoveredPrecedentId: null,
+      selectedPrecedentId: null,
+      selectedAmenity: null,
     }),
 
   setLoading: (source, loading) =>
@@ -141,7 +163,8 @@ export const useSiteStore = create<SiteStore>((set) => ({
     insightBullets: null,
     insightsReport: null,
   }),
-  clearInsight: () => set({ insight: null, insightLoading: false, insightError: null, insightBullets: null }),
 
   setHoveredPrecedentId: (id) => set({ hoveredPrecedentId: id }),
+  setSelectedPrecedentId: (id) => set({ selectedPrecedentId: id }),
+  setSelectedAmenity: (amenity) => set({ selectedAmenity: amenity }),
 }))

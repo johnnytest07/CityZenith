@@ -8,6 +8,11 @@ export interface Council {
    * Null means no local plan has been ingested for this council yet.
    */
   planCorpus: string | null
+  /**
+   * ONS LAD24CD code used to match this council against the boundary dataset.
+   * Required for the council-mode map blur effect.
+   */
+  onsCode?: string
 }
 
 /**
@@ -20,6 +25,7 @@ export const SUPPORTED_COUNCILS: Council[] = [
     id: 'royal-greenwich',
     name: 'Royal Greenwich',
     planCorpus: 'Royal Borough Greenwich',
+    onsCode: 'E09000011',
   },
   {
     id: 'enfield',

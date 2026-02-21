@@ -26,7 +26,7 @@ export function MapShell() {
       <div className="flex h-screen w-screen bg-gray-950 overflow-hidden">
         {/* Build panel — slides in from the left when build mode is active */}
         {buildActive && (
-          <div className="w-72 flex-shrink-0 overflow-y-auto">
+          <div className="w-72 shrink-0 overflow-y-auto">
             <BuildPanel />
           </div>
         )}
@@ -34,14 +34,14 @@ export function MapShell() {
         {/* Map area */}
         <div className="relative flex-1 min-w-0">
           <MapCanvas />
-          <MapPrompt visible={!hasSite} />
+          {!hasSite && <MapPrompt showHint />}
           <BuildingHoverCard />
           <IdentityBadge />
         </div>
 
         {/* Side panel — slides in when a site is selected */}
         {hasSite && (
-          <div className="w-96 flex-shrink-0 border-l border-gray-800 overflow-y-auto bg-gray-950">
+          <div className="w-96 shrink-0 border-l border-gray-800 overflow-y-auto bg-gray-950">
             <SidePanel />
           </div>
         )}

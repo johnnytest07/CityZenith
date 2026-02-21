@@ -49,8 +49,8 @@ export function ConstraintsSummary() {
     useSiteStore();
   const [expanded, setExpanded] = useState(false);
 
-  const insightBullet =
-    insightBullets?.find((b) => b.category === "constraints") ?? null;
+  const constraintsBullets =
+    insightBullets?.filter((b) => b.category === "constraints").map((b) => b.text) ?? [];
 
   if (loadingStates.constraints) {
     return (
@@ -169,8 +169,8 @@ export function ConstraintsSummary() {
         )}
 
         <InsightCallout
-          text={insightBullet?.text ?? null}
-          isLoading={insightLoading && !insightBullet}
+          texts={constraintsBullets}
+          isLoading={insightLoading && constraintsBullets.length === 0}
         />
       </div>
     </SectionCard>

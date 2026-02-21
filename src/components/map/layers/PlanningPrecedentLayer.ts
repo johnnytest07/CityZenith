@@ -111,6 +111,7 @@ export function createPlanningPrecedentLayer(
       onClick: (info) => {
         if (info.object && onFeatureClick) {
           onFeatureClick(info.object as GeoJSON.Feature)
+          return true // prevent propagation to MapLibre — don't create a new site
         }
       },
 

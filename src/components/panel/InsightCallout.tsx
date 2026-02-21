@@ -11,7 +11,7 @@
  */
 
 interface InsightCalloutProps {
-  text: string | null;
+  texts: string[];
   isLoading: boolean;
 }
 
@@ -55,8 +55,8 @@ function HighlightedText({ text }: { text: string }) {
   );
 }
 
-export function InsightCallout({ text, isLoading }: InsightCalloutProps) {
-  if (isLoading) {
+export function InsightCallout({ texts, isLoading }: InsightCalloutProps) {
+  if (isLoading && texts.length === 0) {
     return (
       <div className="mt-3 pt-3 border-t border-violet-900/30">
         <div className="flex items-center gap-2 bg-violet-950/20 border border-violet-900/30 rounded-lg px-3 py-2.5">
@@ -69,22 +69,29 @@ export function InsightCallout({ text, isLoading }: InsightCalloutProps) {
     );
   }
 
-  if (!text) return null;
+  if (texts.length === 0) return null;
 
   return (
     <div className="mt-3 pt-3 border-t border-violet-900/30">
       <div className="bg-violet-950/25 border border-violet-800/40 rounded-lg px-3 py-2.5">
         {/* Header row */}
-        <div className="flex items-center gap-1.5 mb-1.5">
+        <div className="flex items-center gap-1.5 mb-2">
           <SparkleIcon />
           <span className="text-violet-500 text-[10px] font-semibold uppercase tracking-widest">
             AI Analysis
           </span>
         </div>
-        {/* Body with highlighted figures */}
-        <p className="text-xs text-violet-200/90 leading-relaxed">
-          <HighlightedText text={text} />
-        </p>
+        {/* One paragraph per bullet, separated by a faint rule */}
+        <div className="space-y-2">
+          {texts.map((t, i) => (
+            <div key={i}>
+              {i > 0 && <div className="border-t border-violet-900/30 mb-2" />}
+              <p className="text-xs text-violet-200/90 leading-relaxed">
+                <HighlightedText text={t} />
+              </p>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
