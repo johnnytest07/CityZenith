@@ -7,13 +7,13 @@ export function createSiteHighlightLayer(siteGeometry: GeoJSON.Geometry) {
   const feature: GeoJSON.Feature = {
     type: 'Feature',
     geometry: siteGeometry,
-    properties: {},
+    properties: { layerType: 'site-highlight' },
   }
 
   return new GeoJsonLayer({
     id: 'site-highlight',
     data: { type: 'FeatureCollection', features: [feature] },
-    pickable: false,
+    pickable: true,
     stroked: true,
     filled: true,
     extruded: false,

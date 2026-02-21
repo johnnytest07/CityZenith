@@ -1,42 +1,45 @@
 'use client'
 
+import { useState } from 'react'
 import { useSiteStore } from '@/stores/siteStore'
 import { getDecisionHex } from '@/lib/colors'
+import { SectionCard } from './SectionCard'
 
 /**
  * Reads planningPrecedentFeatures (raw GeoJSON) from SiteContext.
  * Computes counts and filters AT RENDER-TIME ONLY — nothing stored.
  */
 export function PrecedentList() {
-  const { siteContext, loadingStates } = useSiteStore()
+  const { siteContext, loadingStates, insightBullets } = useSiteStore()
+  const [expanded, setExpanded] = useState(false)
+
+  const insightBullet = insightBullets?.find((b) => b.category === 'planning') ?? null
 
   if (loadingStates.precedent) {
     return (
-      <Section title="Site Applications" scope="100m radius">
-        {/* Summary stats bar skeleton */}
-        <div className="flex gap-3 mb-3">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="flex-1 bg-gray-800 rounded h-10 animate-pulse" />
-          ))}
-        </div>
-        {/* Card skeletons */}
-        <div className="space-y-2">
+      <SectionCard
+        title="Site Applications"
+        scope="100m radius"
+        summary={<span className="text-xs text-gray-700 animate-pulse">Loading…</span>}
+        expanded={expanded}
+        onToggle={() => setExpanded((e) => !e)}
+      >
+        <div className="space-y-2 mt-2">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="bg-gray-900 border border-gray-800 rounded-lg p-3 space-y-2 animate-pulse">
+            <div
+              key={i}
+              className="bg-gray-900 border border-gray-800 rounded-lg p-3 space-y-2 animate-pulse"
+            >
               <div className="flex justify-between">
                 <div className="h-3 w-24 bg-gray-700 rounded" />
                 <div className="h-3 w-16 bg-gray-700 rounded" />
               </div>
               <div className="h-3 w-full bg-gray-800 rounded" />
               <div className="h-3 w-2/3 bg-gray-800 rounded" />
-              <div className="flex gap-2">
-                <div className="h-3 w-20 bg-gray-700 rounded" />
-                <div className="h-3 w-14 bg-gray-700 rounded" />
-              </div>
             </div>
           ))}
         </div>
-      </Section>
+      </SectionCard>
     )
   }
 
@@ -44,9 +47,23 @@ export function PrecedentList() {
 
   if (features.length === 0) {
     return (
-      <Section title="Site Applications" scope="100m radius">
-        <p className="text-gray-600 text-xs">No planning applications found for this site.</p>
-      </Section>
+      <SectionCard
+        title="Site Applications"
+        scope="100m radius"
+        summary={<span className="text-xs text-gray-600">No applications found</span>}
+        expanded={expanded}
+        onToggle={() => setExpanded((e) => !e)}
+      >
+        <p className="text-gray-600 text-xs mt-2">
+          No planning applications found for this site.
+        </p>
+        {insightBullet && (
+          <div className="mt-3 pt-3 border-t border-violet-900/40 flex gap-2">
+            <span className="text-violet-500 shrink-0 mt-0.5">✦</span>
+            <p className="text-xs text-violet-300 leading-relaxed">{insightBullet.text}</p>
+          </div>
+        )}
+      </SectionCard>
     )
   }
 
@@ -70,7 +87,6 @@ export function PrecedentList() {
   }
   // --------------------------------------
 
-  // Sort by decision_date desc
   const sorted = [...features].sort((a, b) => {
     const da = a.properties?.decided_date ?? ''
     const db = b.properties?.decided_date ?? ''
@@ -78,23 +94,41 @@ export function PrecedentList() {
   })
 
   return (
-    <Section title="Site Applications" scope="100m radius">
-      {/* Render-time summary counts */}
-      <div className="flex gap-3 mb-3 text-xs">
-        <Stat label="Total" value={features.length} />
-        <Stat label="Approved" value={approvedCount} color="#16a34a" />
-        <Stat label="Refused" value={refusedCount} color="#dc2626" />
-        <Stat label="Recent (2yr)" value={recentCount} />
-      </div>
-
-      <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+    <SectionCard
+      title="Site Applications"
+      scope="100m radius"
+      summary={
+        <div className="flex items-center gap-1.5 text-xs flex-wrap">
+          <span className="font-semibold text-gray-300 tabular-nums">{features.length}</span>
+          <span className="text-gray-600">total</span>
+          <span className="text-gray-700 mx-0.5">·</span>
+          <span className="font-semibold text-green-500 tabular-nums">{approvedCount}</span>
+          <span className="text-gray-600">approved</span>
+          <span className="text-gray-700 mx-0.5">·</span>
+          <span className="font-semibold text-red-500 tabular-nums">{refusedCount}</span>
+          <span className="text-gray-600">refused</span>
+          {recentCount > 0 && (
+            <>
+              <span className="text-gray-700 mx-0.5">·</span>
+              <span className="font-semibold text-gray-400 tabular-nums">{recentCount}</span>
+              <span className="text-gray-600">recent</span>
+            </>
+          )}
+        </div>
+      }
+      expanded={expanded}
+      onToggle={() => setExpanded((e) => !e)}
+    >
+      <div className="space-y-2 mt-2 max-h-80 overflow-y-auto pr-1">
         {sorted.map((feature, idx) => {
           const p = feature.properties ?? {}
           const decision = p.normalised_decision ?? p.decision ?? null
           const isBuffered = p.geometrySource === 'buffered-centroid'
           const decisionDate = p.decided_date
             ? new Date(p.decided_date).toLocaleDateString('en-GB', {
-                year: 'numeric', month: 'short', day: 'numeric',
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
               })
             : null
 
@@ -139,39 +173,13 @@ export function PrecedentList() {
           )
         })}
       </div>
-    </Section>
-  )
-}
 
-function Section({ title, scope, children }: { title: string; scope?: string; children: React.ReactNode }) {
-  return (
-    <div className="p-4 border-b border-gray-800">
-      <div className="flex items-center gap-2 mb-3">
-        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{title}</h3>
-        {scope && (
-          <span className="text-xs text-gray-600 bg-gray-800 px-1.5 py-0.5 rounded">{scope}</span>
-        )}
-      </div>
-      {children}
-    </div>
-  )
-}
-
-function Stat({
-  label,
-  value,
-  color,
-}: {
-  label: string
-  value: number
-  color?: string
-}) {
-  return (
-    <div className="flex flex-col items-center bg-gray-900 rounded px-2 py-1 min-w-0 flex-1">
-      <span className="text-sm font-semibold tabular-nums" style={{ color: color ?? '#e5e7eb' }}>
-        {value}
-      </span>
-      <span className="text-gray-600 text-xs truncate w-full text-center">{label}</span>
-    </div>
+      {insightBullet && (
+        <div className="mt-3 pt-3 border-t border-violet-900/40 flex gap-2">
+          <span className="text-violet-500 shrink-0 mt-0.5">✦</span>
+          <p className="text-xs text-violet-300 leading-relaxed">{insightBullet.text}</p>
+        </div>
+      )}
+    </SectionCard>
   )
 }

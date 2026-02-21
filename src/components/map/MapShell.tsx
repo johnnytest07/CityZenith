@@ -2,6 +2,7 @@
 
 import { MapCanvas } from './MapCanvas'
 import { MapPrompt } from './MapPrompt'
+import { BuildingHoverCard } from './BuildingHoverCard'
 import { SidePanel } from '@/components/panel/SidePanel'
 import { useSiteStore } from '@/stores/siteStore'
 
@@ -20,6 +21,7 @@ export function MapShell() {
       <div className="relative flex-1 min-w-0">
         <MapCanvas />
         <MapPrompt visible={!hasSite} />
+        <BuildingHoverCard />
       </div>
 
       {/* Side panel — slides in when a site is selected */}

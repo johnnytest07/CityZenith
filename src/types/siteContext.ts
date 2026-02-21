@@ -1,6 +1,9 @@
 import type { PlanningContextStats } from './ibex'
 import type { StatutoryConstraints } from './constraints'
 
+export type InsightCategory = 'planning' | 'constraints' | 'built_form' | 'council'
+export interface InsightBullet { category: InsightCategory; text: string }
+
 /**
  * Computed at normalisation time and stored on each planning precedent feature.
  *

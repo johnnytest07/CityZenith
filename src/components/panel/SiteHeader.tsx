@@ -1,10 +1,12 @@
 'use client'
 
 import { useSiteStore } from '@/stores/siteStore'
+import { useDevStore } from '@/stores/devStore'
 import { getCentroid } from '@/lib/geometry'
 
 export function SiteHeader() {
   const { siteContext, clearSiteContext } = useSiteStore()
+  const { buildMode, activateBuildNew, deactivateBuild } = useDevStore()
 
   if (!siteContext) return null
 
@@ -22,6 +24,11 @@ export function SiteHeader() {
       (f) => f.properties?.council_name,
     )?.properties?.council_name ?? null
 
+  const handleClose = () => {
+    deactivateBuild()
+    clearSiteContext()
+  }
+
   return (
     <div className="flex items-start justify-between p-4 border-b border-gray-800 bg-gray-900">
       <div className="min-w-0 flex-1">
@@ -37,9 +44,21 @@ export function SiteHeader() {
         <p className="text-gray-700 text-xs mt-1 font-mono">
           {siteContext.siteId.slice(0, 8)}
         </p>
+
+        {/* Build New toggle */}
+        <button
+          onClick={buildMode === 'off' ? activateBuildNew : deactivateBuild}
+          className={`mt-2 text-xs px-2.5 py-1 rounded font-medium transition-colors ${
+            buildMode === 'new'
+              ? 'bg-violet-700 text-white hover:bg-violet-600'
+              : 'bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-white'
+          }`}
+        >
+          {buildMode === 'new' ? 'Exit Build Mode' : '⊕ Build New'}
+        </button>
       </div>
       <button
-        onClick={clearSiteContext}
+        onClick={handleClose}
         className="ml-3 flex-shrink-0 text-gray-500 hover:text-white transition-colors p-1 rounded hover:bg-gray-800"
         aria-label="Close site panel"
       >

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import type { SiteContext } from '@/types/siteContext'
+import type { SiteContext, InsightBullet, InsightCategory } from '@/types/siteContext'
 import { serialiseSiteContext, type SerialisedSiteContext } from '@/lib/serialiseSiteContext'
 
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta'
@@ -28,7 +28,7 @@ function buildPrompt(summary: SerialisedSiteContext): string {
 
   return `You are a senior planning consultant specialising in UK residential and mixed-use development.
 
-Analyse the following site evidence and provide exactly 3–4 concise, actionable bullet points for a property developer.
+Analyse the following site evidence and provide exactly 4 insight bullets — one for each category below.
 
 PLANNING STATISTICS
 - Total applications on record: ${summary.planningStats.totalApplications}
@@ -47,16 +47,19 @@ NEARBY BUILT CONTEXT (250 m radius)
 - Land use types: ${summary.nearbyContext.landUseTypes.join(', ') || 'unknown'}
 
 INSTRUCTIONS
-Respond with exactly 3–4 bullet points using • as the bullet character.
-Each bullet point must be 1–2 sentences.
-Base your analysis only on the evidence above — no speculation.
-Cover these themes:
-1. Planning precedent signals (approval likelihood, what types are being approved/refused)
-2. Constraint implications for development type or scale
-3. Opportunity signals from high-value applications or developer metrics
-4. Market activity context
+Return a JSON array with exactly 4 objects. Each object must have:
+  - "category": one of "planning", "constraints", "built_form", "council"
+  - "text": a single concise sentence (max 30 words) of actionable insight for that category
 
-No headers, no preamble, no closing remarks — bullet points only.`
+Categories:
+- "planning": planning precedent signals (approval likelihood, what types are being approved/refused)
+- "constraints": constraint implications for development type or scale
+- "built_form": opportunity signals from the nearby built context
+- "council": market activity context from council statistics
+
+Return ONLY valid JSON array. No markdown fences, no preamble, no trailing text.
+Example format:
+[{"category":"planning","text":"..."},{"category":"constraints","text":"..."},{"category":"built_form","text":"..."},{"category":"council","text":"..."}]`
 }
 
 export async function POST(request: NextRequest) {
@@ -120,7 +123,41 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Gemini returned an empty response' }, { status: 502 })
     }
 
-    return NextResponse.json({ insight: text.trim() })
+    // Parse structured bullets from JSON response
+    let bullets: InsightBullet[] = []
+    try {
+      // Strip any accidental markdown fences
+      const cleaned = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '')
+      const parsed = JSON.parse(cleaned)
+      if (Array.isArray(parsed)) {
+        const validCategories: InsightCategory[] = ['planning', 'constraints', 'built_form', 'council']
+        bullets = parsed
+          .filter((b: unknown): b is InsightBullet =>
+            typeof b === 'object' && b !== null &&
+            'category' in b && 'text' in b &&
+            validCategories.includes((b as InsightBullet).category) &&
+            typeof (b as InsightBullet).text === 'string',
+          )
+      }
+    } catch {
+      // Fallback: parse as bullet list lines and assign categories in order
+      const categories: InsightCategory[] = ['planning', 'constraints', 'built_form', 'council']
+      bullets = text.trim()
+        .split('\n')
+        .filter((l) => l.trim().startsWith('•'))
+        .slice(0, 4)
+        .map((l, i) => ({
+          category: categories[i] ?? 'planning',
+          text: l.replace(/^•\s*/, '').trim(),
+        }))
+    }
+
+    // Build raw text for backward compat (map tooltip + InsightsPanel)
+    const raw = bullets.length > 0
+      ? bullets.map((b) => '• ' + b.text).join('\n')
+      : text.trim()
+
+    return NextResponse.json({ bullets, raw })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     return NextResponse.json({ error: `Gemini request failed: ${message}` }, { status: 502 })

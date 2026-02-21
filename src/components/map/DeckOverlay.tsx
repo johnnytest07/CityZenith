@@ -3,10 +3,11 @@
 import { useEffect } from 'react'
 import { useControl } from 'react-map-gl/maplibre'
 import { MapboxOverlay } from '@deck.gl/mapbox'
-import type { Layer } from '@deck.gl/core'
+import type { Layer, PickingInfo } from '@deck.gl/core'
 
 interface DeckOverlayProps {
   layers: Layer[]
+  getTooltip?: (info: PickingInfo) => { html: string; style?: Record<string, string> } | null
 }
 
 /**
@@ -14,14 +15,14 @@ interface DeckOverlayProps {
  * interleaved: true ensures deck.gl renders within the MapLibre WebGL context,
  * enabling correct depth ordering with map labels and 3D buildings.
  */
-export function DeckOverlay({ layers }: DeckOverlayProps) {
+export function DeckOverlay({ layers, getTooltip }: DeckOverlayProps) {
   const overlay = useControl<MapboxOverlay>(
-    () => new MapboxOverlay({ interleaved: true, layers }),
+    () => new MapboxOverlay({ interleaved: true, layers, getTooltip }),
   )
 
   useEffect(() => {
-    overlay.setProps({ layers })
-  }, [overlay, layers])
+    overlay.setProps({ layers, getTooltip })
+  }, [overlay, layers, getTooltip])
 
   return null
 }

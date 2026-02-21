@@ -3,19 +3,32 @@
 import { useState } from 'react'
 import type { PlanningContextStats } from '@/types/ibex'
 import { useSiteStore } from '@/stores/siteStore'
+import { SectionCard } from './SectionCard'
 
 export function PlanningStats() {
-  const { siteContext, loadingStates } = useSiteStore()
+  const { siteContext, loadingStates, insightBullets } = useSiteStore()
+  const [expanded, setExpanded] = useState(false)
+
+  const insightBullet = insightBullets?.find((b) => b.category === 'council') ?? null
+
   const stats: PlanningContextStats | null = siteContext?.planningContextStats ?? null
 
-  const councilName = siteContext?.planningPrecedentFeatures?.features
-    .find((f) => f.properties?.council_name)?.properties?.council_name ?? null
+  const councilName =
+    siteContext?.planningPrecedentFeatures?.features.find(
+      (f) => f.properties?.council_name,
+    )?.properties?.council_name ?? null
 
   if (loadingStates.stats) {
     return (
-      <Section title="Council Context" scope={councilName ?? 'council-wide'}>
-        <div className="space-y-3">
-          <div className="h-6 w-24 bg-gray-800 rounded animate-pulse" />
+      <SectionCard
+        title="Council Context"
+        scope={councilName ?? undefined}
+        summary={<span className="text-xs text-gray-700 animate-pulse">Loading…</span>}
+        expanded={expanded}
+        onToggle={() => setExpanded((e) => !e)}
+      >
+        <div className="space-y-3 mt-2">
+          <div className="h-5 w-20 bg-gray-800 rounded animate-pulse" />
           <div className="space-y-2">
             {[1, 2].map((i) => (
               <div key={i} className="flex justify-between">
@@ -24,98 +37,154 @@ export function PlanningStats() {
               </div>
             ))}
           </div>
-          <div className="space-y-2 pt-1">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="flex justify-between">
-                <div className="h-3 bg-gray-800 rounded animate-pulse" style={{ width: `${45 + i * 10}%` }} />
-                <div className="h-3 w-8 bg-gray-800 rounded animate-pulse" />
-              </div>
-            ))}
-          </div>
         </div>
-      </Section>
+      </SectionCard>
     )
   }
 
   if (!stats) {
     return (
-      <Section title="Council Context" scope={councilName ?? 'council-wide'}>
-        <p className="text-gray-600 text-xs">No statistical data available for this site.</p>
-      </Section>
+      <SectionCard
+        title="Council Context"
+        scope={councilName ?? undefined}
+        summary={<span className="text-xs text-gray-600">No data available</span>}
+        expanded={expanded}
+        onToggle={() => setExpanded((e) => !e)}
+      >
+        <p className="text-gray-600 text-xs mt-2">
+          No statistical data available for this site.
+        </p>
+        {insightBullet && (
+          <div className="mt-3 pt-3 border-t border-violet-900/40 flex gap-2">
+            <span className="text-violet-500 shrink-0 mt-0.5">✦</span>
+            <p className="text-xs text-violet-300 leading-relaxed">{insightBullet.text}</p>
+          </div>
+        )}
+      </SectionCard>
     )
   }
 
   return (
-    <Section title="Council Context" scope={councilName ?? 'council-wide'}>
-      {/* Activity level */}
-      {stats.council_development_activity_level && (
-        <div className="mb-4 flex items-center gap-2">
-          <span className="text-gray-500 text-xs">Activity</span>
-          <span className="inline-block bg-indigo-950/60 border border-indigo-800/50 text-indigo-300 text-xs px-2 py-0.5 rounded-full font-medium capitalize">
-            {stats.council_development_activity_level}
-          </span>
+    <SectionCard
+      title="Council Context"
+      scope={councilName ?? undefined}
+      summary={
+        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs">
+          {stats.council_development_activity_level && (
+            <>
+              <span className="text-indigo-400 capitalize font-medium">
+                {stats.council_development_activity_level}
+              </span>
+              <span className="text-gray-600">activity</span>
+            </>
+          )}
+          {stats.approval_rate != null && (
+            <>
+              <span className="text-gray-700 mx-0.5">·</span>
+              <span className="text-green-400 tabular-nums font-medium">
+                {(stats.approval_rate * 100).toFixed(0)}%
+              </span>
+              <span className="text-gray-600">approval</span>
+            </>
+          )}
+          {stats.number_of_new_homes_approved != null &&
+            stats.number_of_new_homes_approved > 0 && (
+              <>
+                <span className="text-gray-700 mx-0.5">·</span>
+                <span className="text-gray-300 tabular-nums font-medium">
+                  {stats.number_of_new_homes_approved.toLocaleString()}
+                </span>
+                <span className="text-gray-600">homes</span>
+              </>
+            )}
         </div>
-      )}
-
-      {/* Approval / refusal rates */}
-      {(stats.approval_rate != null || stats.refusal_rate != null) && (
-        <div className="mb-4">
-          <p className="text-gray-600 text-xs uppercase tracking-wide mb-2">Outcome rates</p>
-          <div className="space-y-1.5">
-            {stats.approval_rate != null && (
-              <RateRow
-                label="Approval"
-                value={stats.approval_rate}
-                color="bg-green-500"
-                textColor="text-green-400"
-              />
-            )}
-            {stats.refusal_rate != null && (
-              <RateRow
-                label="Refusal"
-                value={stats.refusal_rate}
-                color="bg-red-500"
-                textColor="text-red-400"
-              />
-            )}
+      }
+      expanded={expanded}
+      onToggle={() => setExpanded((e) => !e)}
+    >
+      <div className="mt-2">
+        {/* Activity level */}
+        {stats.council_development_activity_level && (
+          <div className="mb-4 flex items-center gap-2">
+            <span className="text-gray-500 text-xs">Activity</span>
+            <span className="inline-block bg-indigo-950/60 border border-indigo-800/50 text-indigo-300 text-xs px-2 py-0.5 rounded-full font-medium capitalize">
+              {stats.council_development_activity_level}
+            </span>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Applications by type */}
-      {stats.number_of_applications && Object.keys(stats.number_of_applications).length > 0 && (
-        <CollapsibleList
-          title="Applications by type"
-          entries={Object.entries(stats.number_of_applications)
-            .filter(([, v]) => v > 0)
-            .sort(([, a], [, b]) => b - a)}
-          renderValue={(v) => v.toLocaleString()}
-          maxVisible={5}
-        />
-      )}
+        {/* Approval / refusal rates */}
+        {(stats.approval_rate != null || stats.refusal_rate != null) && (
+          <div className="mb-4">
+            <p className="text-gray-600 text-xs uppercase tracking-wide mb-2">Outcome rates</p>
+            <div className="space-y-1.5">
+              {stats.approval_rate != null && (
+                <RateRow
+                  label="Approval"
+                  value={stats.approval_rate}
+                  color="bg-green-500"
+                  textColor="text-green-400"
+                />
+              )}
+              {stats.refusal_rate != null && (
+                <RateRow
+                  label="Refusal"
+                  value={stats.refusal_rate}
+                  color="bg-red-500"
+                  textColor="text-red-400"
+                />
+              )}
+            </div>
+          </div>
+        )}
 
-      {/* Average decision time */}
-      {stats.average_decision_time && Object.keys(stats.average_decision_time).length > 0 && (
-        <CollapsibleList
-          title="Avg. decision time"
-          entries={Object.entries(stats.average_decision_time)
-            .filter(([, v]) => v > 0)
-            .sort(([, a], [, b]) => b - a)}
-          renderValue={(v) => `${Math.round(v)}d`}
-          maxVisible={4}
-        />
-      )}
+        {/* Applications by type */}
+        {stats.number_of_applications &&
+          Object.keys(stats.number_of_applications).length > 0 && (
+            <CollapsibleList
+              title="Applications by type"
+              entries={Object.entries(stats.number_of_applications)
+                .filter(([, v]) => v > 0)
+                .sort(([, a], [, b]) => b - a)}
+              renderValue={(v) => v.toLocaleString()}
+              maxVisible={5}
+            />
+          )}
 
-      {/* New homes approved */}
-      {stats.number_of_new_homes_approved != null && stats.number_of_new_homes_approved > 0 && (
-        <div className="mt-1 pt-3 border-t border-gray-800">
-          <p className="text-gray-600 text-xs uppercase tracking-wide mb-1">New homes approved</p>
-          <span className="text-xl font-bold text-white tabular-nums">
-            {stats.number_of_new_homes_approved.toLocaleString()}
-          </span>
-        </div>
-      )}
-    </Section>
+        {/* Average decision time */}
+        {stats.average_decision_time &&
+          Object.keys(stats.average_decision_time).length > 0 && (
+            <CollapsibleList
+              title="Avg. decision time"
+              entries={Object.entries(stats.average_decision_time)
+                .filter(([, v]) => v > 0)
+                .sort(([, a], [, b]) => b - a)}
+              renderValue={(v) => `${Math.round(v)}d`}
+              maxVisible={4}
+            />
+          )}
+
+        {/* New homes approved */}
+        {stats.number_of_new_homes_approved != null &&
+          stats.number_of_new_homes_approved > 0 && (
+            <div className="mt-1 pt-3 border-t border-gray-800">
+              <p className="text-gray-600 text-xs uppercase tracking-wide mb-1">
+                New homes approved
+              </p>
+              <span className="text-xl font-bold text-white tabular-nums">
+                {stats.number_of_new_homes_approved.toLocaleString()}
+              </span>
+            </div>
+          )}
+
+        {insightBullet && (
+          <div className="mt-3 pt-3 border-t border-violet-900/40 flex gap-2">
+            <span className="text-violet-500 shrink-0 mt-0.5">✦</span>
+            <p className="text-xs text-violet-300 leading-relaxed">{insightBullet.text}</p>
+          </div>
+        )}
+      </div>
+    </SectionCard>
   )
 }
 
@@ -158,8 +227,8 @@ function CollapsibleList({
   renderValue: (v: number) => string
   maxVisible: number
 }) {
-  const [expanded, setExpanded] = useState(false)
-  const visible = expanded ? entries : entries.slice(0, maxVisible)
+  const [listExpanded, setListExpanded] = useState(false)
+  const visible = listExpanded ? entries : entries.slice(0, maxVisible)
   const hidden = entries.length - maxVisible
 
   return (
@@ -177,26 +246,12 @@ function CollapsibleList({
       </div>
       {hidden > 0 && (
         <button
-          onClick={() => setExpanded((e) => !e)}
+          onClick={() => setListExpanded((e) => !e)}
           className="mt-1.5 text-xs text-gray-600 hover:text-gray-400 transition-colors"
         >
-          {expanded ? '↑ Show less' : `↓ ${hidden} more`}
+          {listExpanded ? '↑ Show less' : `↓ ${hidden} more`}
         </button>
       )}
-    </div>
-  )
-}
-
-function Section({ title, scope, children }: { title: string; scope?: string; children: React.ReactNode }) {
-  return (
-    <div className="p-4 border-b border-gray-800">
-      <div className="flex items-center gap-2 mb-3">
-        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{title}</h3>
-        {scope && (
-          <span className="text-xs text-gray-600 bg-gray-800 px-1.5 py-0.5 rounded">{scope}</span>
-        )}
-      </div>
-      {children}
     </div>
   )
 }

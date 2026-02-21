@@ -1,18 +1,31 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { useSiteStore } from '@/stores/siteStore'
 import { useInsights } from '@/hooks/useInsights'
+import { SectionCard } from './SectionCard'
 
 /**
  * Generates AI-powered site insights via the server-side Gemini API proxy.
- *
- * Reads raw evidence from SiteContext, sends it to /api/insights (server-side),
- * and renders the returned analysis. No SiteContext data is exposed client-side
- * to the model — the serialisation and API call happen on the server.
+ * Auto-triggers once per site after planning data loads.
  */
 export function InsightsPanel() {
-  const { siteContext } = useSiteStore()
+  const { siteContext, loadingStates } = useSiteStore()
   const { insight, isLoading, error, generateInsights, clearInsights } = useInsights()
+  const [expanded, setExpanded] = useState(false)
+
+  // Auto-generate once per site after planning data finishes loading
+  useEffect(() => {
+    if (!siteContext) return
+    if (insight || isLoading || error) return
+    if (loadingStates.precedent || loadingStates.stats) return
+    const hasEvidence =
+      siteContext.planningPrecedentFeatures.features.length > 0 ||
+      siteContext.planningContextStats !== null
+    if (!hasEvidence) return
+    generateInsights(siteContext)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [siteContext?.siteId, loadingStates.precedent, loadingStates.stats])
 
   if (!siteContext) return null
 
@@ -20,79 +33,95 @@ export function InsightsPanel() {
     siteContext.planningPrecedentFeatures.features.length > 0 ||
     siteContext.planningContextStats !== null
 
-  return (
-    <section className="px-4 py-4 border-t border-zinc-800">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-1.5">
-          <SparkleIcon />
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-            AI Insights
-          </h3>
-        </div>
+  const firstBullet = insight
+    ? (insight.split('\n').find((l) => l.trim().startsWith('•'))?.replace(/^•\s*/, '') ??
+       insight.split('\n')[0])
+    : null
 
-        {insight && !isLoading && (
+  const summary = isLoading ? (
+    <span className="flex items-center gap-1.5 text-xs text-violet-400">
+      <span className="w-2 h-2 border border-violet-500 border-t-violet-200 rounded-full animate-spin inline-block shrink-0" />
+      Analysing site…
+    </span>
+  ) : error ? (
+    <span className="text-xs text-red-400">Analysis failed — expand to retry</span>
+  ) : firstBullet ? (
+    <p className="text-xs text-gray-400 line-clamp-2 leading-relaxed">{firstBullet}</p>
+  ) : (
+    <span className="text-xs text-gray-600">
+      {hasEvidence ? 'Waiting for data…' : 'No evidence loaded'}
+    </span>
+  )
+
+  return (
+    <SectionCard
+      title="AI Insights"
+      summary={summary}
+      expanded={expanded}
+      onToggle={() => setExpanded((e) => !e)}
+    >
+      <div className="mt-2">
+        {/* Trigger button — shown when no insight yet */}
+        {!insight && !isLoading && !error && (
           <button
-            onClick={clearInsights}
-            className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+            onClick={() => generateInsights(siteContext)}
+            disabled={!hasEvidence}
+            title={!hasEvidence ? 'Waiting for planning data to load…' : undefined}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg
+              bg-violet-700 hover:bg-violet-600 active:bg-violet-800
+              disabled:opacity-40 disabled:cursor-not-allowed
+              text-white text-sm font-medium transition-colors"
           >
-            Clear
+            <SparkleIcon />
+            Generate insights with Gemini
           </button>
         )}
-      </div>
 
-      {/* Trigger button */}
-      {!insight && !isLoading && !error && (
-        <button
-          onClick={() => generateInsights(siteContext)}
-          disabled={!hasEvidence}
-          title={!hasEvidence ? 'Waiting for planning data to load…' : undefined}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg
-            bg-violet-700 hover:bg-violet-600 active:bg-violet-800
-            disabled:opacity-40 disabled:cursor-not-allowed
-            text-white text-sm font-medium transition-colors"
-        >
-          <SparkleIcon />
-          Generate insights with Gemini
-        </button>
-      )}
-
-      {/* Loading */}
-      {isLoading && (
-        <div className="flex items-center gap-2 text-sm text-zinc-400 py-3">
-          <Spinner />
-          <span>Analysing site evidence…</span>
-        </div>
-      )}
-
-      {/* Error */}
-      {error && !isLoading && (
-        <div className="bg-red-950/50 border border-red-800 rounded-lg px-3 py-2.5 space-y-2">
-          <p className="text-red-400 text-xs">{error}</p>
-          <button
-            onClick={() => generateInsights(siteContext)}
-            className="text-xs text-red-400 hover:text-red-200 underline transition-colors"
-          >
-            Retry
-          </button>
-        </div>
-      )}
-
-      {/* Insight text */}
-      {insight && !isLoading && (
-        <div className="space-y-3">
-          <div className="text-sm text-zinc-200 leading-relaxed whitespace-pre-wrap">
-            {insight}
+        {/* Loading */}
+        {isLoading && (
+          <div className="flex items-center gap-2 text-sm text-zinc-400 py-3">
+            <Spinner />
+            <span>Analysing site evidence…</span>
           </div>
-          <button
-            onClick={() => generateInsights(siteContext)}
-            className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
-          >
-            Regenerate
-          </button>
-        </div>
-      )}
-    </section>
+        )}
+
+        {/* Error */}
+        {error && !isLoading && (
+          <div className="bg-red-950/50 border border-red-800 rounded-lg px-3 py-2.5 space-y-2">
+            <p className="text-red-400 text-xs">{error}</p>
+            <button
+              onClick={() => generateInsights(siteContext)}
+              className="text-xs text-red-400 hover:text-red-200 underline transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        {/* Full insight text */}
+        {insight && !isLoading && (
+          <div className="space-y-3">
+            <div className="text-sm text-zinc-200 leading-relaxed whitespace-pre-wrap">
+              {insight}
+            </div>
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => generateInsights(siteContext)}
+                className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+              >
+                Regenerate
+              </button>
+              <button
+                onClick={clearInsights}
+                className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </SectionCard>
   )
 }
 

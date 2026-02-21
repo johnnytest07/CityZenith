@@ -6,7 +6,9 @@ import { PrecedentList } from './PrecedentList'
 import { ConstraintsSummary } from './ConstraintsSummary'
 import { BuiltFormSummary } from './BuiltFormSummary'
 import { InsightsPanel } from './InsightsPanel'
+import { DevModePanel } from './DevModePanel'
 import { useSiteStore } from '@/stores/siteStore'
+import { useDevStore } from '@/stores/devStore'
 
 /**
  * The right-side site context panel.
@@ -14,6 +16,7 @@ import { useSiteStore } from '@/stores/siteStore'
  */
 export function SidePanel() {
   const { siteContext, error } = useSiteStore()
+  const { buildMode } = useDevStore()
 
   if (!siteContext) return null
 
@@ -28,6 +31,7 @@ export function SidePanel() {
       )}
 
       <div className="flex-1 overflow-y-auto">
+        {buildMode === 'new' && <DevModePanel />}
         <PrecedentList />
         <ConstraintsSummary />
         <BuiltFormSummary />

@@ -1,21 +1,23 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useCallback } from 'react'
+import { useSiteStore } from '@/stores/siteStore'
 import type { SiteContext } from '@/types/siteContext'
 
-interface InsightsState {
-  insight: string | null
-  isLoading: boolean
-  error: string | null
-}
-
-const INITIAL: InsightsState = { insight: null, isLoading: false, error: null }
-
 export function useInsights() {
-  const [state, setState] = useState<InsightsState>(INITIAL)
+  const {
+    insight,
+    insightLoading,
+    insightError,
+    setInsight,
+    setInsightLoading,
+    setInsightError,
+    setInsightBullets,
+  } = useSiteStore()
 
   const generateInsights = useCallback(async (siteContext: SiteContext) => {
-    setState({ insight: null, isLoading: true, error: null })
+    setInsightLoading(true)
+    setInsightError(null)
 
     try {
       const res = await fetch('/api/insights', {
@@ -27,25 +29,37 @@ export function useInsights() {
       const data = await res.json()
 
       if (!res.ok) {
-        setState({
-          insight: null,
-          isLoading: false,
-          error: data.error ?? 'Failed to generate insights',
-        })
+        setInsightError(data.error ?? 'Failed to generate insights')
+        setInsightLoading(false)
         return
       }
 
-      setState({ insight: data.insight as string, isLoading: false, error: null })
+      // New structured response: { bullets, raw }
+      // Legacy response: { insight } — handled as fallback
+      if (data.raw != null) {
+        setInsight(data.raw as string)
+        if (Array.isArray(data.bullets)) {
+          setInsightBullets(data.bullets)
+        }
+      } else if (data.insight != null) {
+        setInsight(data.insight as string)
+      }
     } catch (err) {
-      setState({
-        insight: null,
-        isLoading: false,
-        error: err instanceof Error ? err.message : 'Request failed',
-      })
+      setInsightError(err instanceof Error ? err.message : 'Request failed')
     }
+
+    setInsightLoading(false)
+  }, [setInsight, setInsightLoading, setInsightError, setInsightBullets])
+
+  const clearInsights = useCallback(() => {
+    useSiteStore.getState().clearInsight()
   }, [])
 
-  const clearInsights = useCallback(() => setState(INITIAL), [])
-
-  return { ...state, generateInsights, clearInsights }
+  return {
+    insight,
+    isLoading: insightLoading,
+    error: insightError,
+    generateInsights,
+    clearInsights,
+  }
 }
