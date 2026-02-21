@@ -4,20 +4,33 @@ import { useEffect, useState } from 'react'
 import { useSiteStore } from '@/stores/siteStore'
 import { useInsights } from '@/hooks/useInsights'
 import { SectionCard } from './SectionCard'
+import { InsightsDashboard } from '@/components/insights/InsightsDashboard'
 
 /**
- * Generates AI-powered site insights via the server-side Gemini API proxy.
- * Auto-triggers once per site after planning data loads.
+ * Generates and displays AI-powered site insights via the server-side Gemini proxy.
+ *
+ * When a structured InsightsReport is available it renders the full InsightsDashboard
+ * (summary + expandable insight cards + full-analysis drawer).
+ * Falls back to plain bullet text for legacy responses.
+ *
+ * Auto-triggers once per site after planning data finishes loading.
  */
 export function InsightsPanel() {
   const { siteContext, loadingStates } = useSiteStore()
-  const { insight, isLoading, error, generateInsights, clearInsights } = useInsights()
+  const {
+    insight,
+    insightsReport,
+    isLoading,
+    error,
+    generateInsights,
+    clearInsights,
+  } = useInsights()
   const [expanded, setExpanded] = useState(false)
 
   // Auto-generate once per site after planning data finishes loading
   useEffect(() => {
     if (!siteContext) return
-    if (insight || isLoading || error) return
+    if (insight || insightsReport || isLoading || error) return
     if (loadingStates.precedent || loadingStates.stats) return
     const hasEvidence =
       siteContext.planningPrecedentFeatures.features.length > 0 ||
@@ -33,10 +46,7 @@ export function InsightsPanel() {
     siteContext.planningPrecedentFeatures.features.length > 0 ||
     siteContext.planningContextStats !== null
 
-  const firstBullet = insight
-    ? (insight.split('\n').find((l) => l.trim().startsWith('•'))?.replace(/^•\s*/, '') ??
-       insight.split('\n')[0])
-    : null
+  // ── Summary line shown on the collapsed card ──────────────────────────────
 
   const summary = isLoading ? (
     <span className="flex items-center gap-1.5 text-xs text-violet-400">
@@ -45,8 +55,13 @@ export function InsightsPanel() {
     </span>
   ) : error ? (
     <span className="text-xs text-red-400">Analysis failed — expand to retry</span>
-  ) : firstBullet ? (
-    <p className="text-xs text-gray-400 line-clamp-2 leading-relaxed">{firstBullet}</p>
+  ) : insightsReport ? (
+    <p className="text-xs text-gray-400 line-clamp-2 leading-relaxed">{insightsReport.summary}</p>
+  ) : insight ? (
+    <p className="text-xs text-gray-400 line-clamp-2 leading-relaxed">
+      {insight.split('\n').find((l) => l.trim().startsWith('•'))?.replace(/^•\s*/, '') ??
+       insight.split('\n')[0]}
+    </p>
   ) : (
     <span className="text-xs text-gray-600">
       {hasEvidence ? 'Waiting for data…' : 'No evidence loaded'}
@@ -61,8 +76,8 @@ export function InsightsPanel() {
       onToggle={() => setExpanded((e) => !e)}
     >
       <div className="mt-2">
-        {/* Trigger button — shown when no insight yet */}
-        {!insight && !isLoading && !error && (
+        {/* Trigger button */}
+        {!insight && !insightsReport && !isLoading && !error && (
           <button
             onClick={() => generateInsights(siteContext)}
             disabled={!hasEvidence}
@@ -98,8 +113,18 @@ export function InsightsPanel() {
           </div>
         )}
 
-        {/* Full insight text */}
-        {insight && !isLoading && (
+        {/* Structured insights report (new format) */}
+        {insightsReport && !isLoading && (
+          <InsightsDashboard
+            report={insightsReport}
+            onRegenerate={() => generateInsights(siteContext)}
+            onClear={clearInsights}
+            isRegenerating={isLoading}
+          />
+        )}
+
+        {/* Legacy bullet text fallback */}
+        {!insightsReport && insight && !isLoading && (
           <div className="space-y-3">
             <div className="text-sm text-zinc-200 leading-relaxed whitespace-pre-wrap">
               {insight}

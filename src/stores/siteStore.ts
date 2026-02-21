@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { SiteContext, SiteLoadingStates, InsightBullet } from '@/types/siteContext'
+import type { InsightsReport } from '@/types/insights'
 import { emptyConstraints } from '@/types/constraints'
 
 interface SiteStore {
@@ -18,6 +19,9 @@ interface SiteStore {
 
   /** Structured AI insight bullets, one per category, for inline section display */
   insightBullets: InsightBullet[] | null
+
+  /** Full structured insights report (with detailed items and summary) */
+  insightsReport: InsightsReport | null
 
   /**
    * Initialise a new SiteContext with siteId + siteGeometry.
@@ -41,6 +45,7 @@ interface SiteStore {
   setInsightLoading: (loading: boolean) => void
   setInsightError: (error: string | null) => void
   setInsightBullets: (bullets: InsightBullet[]) => void
+  setInsightsReport: (report: InsightsReport) => void
   clearInsight: () => void
 }
 
@@ -59,6 +64,7 @@ export const useSiteStore = create<SiteStore>((set) => ({
   insightLoading: false,
   insightError: null,
   insightBullets: null,
+  insightsReport: null,
 
   initialiseSiteContext: (siteId, siteGeometry) =>
     set({
@@ -96,6 +102,7 @@ export const useSiteStore = create<SiteStore>((set) => ({
       insightLoading: false,
       insightError: null,
       insightBullets: null,
+      insightsReport: null,
     }),
 
   setLoading: (source, loading) =>
@@ -109,5 +116,12 @@ export const useSiteStore = create<SiteStore>((set) => ({
   setInsightLoading: (loading) => set({ insightLoading: loading }),
   setInsightError: (error) => set({ insightError: error }),
   setInsightBullets: (bullets) => set({ insightBullets: bullets }),
-  clearInsight: () => set({ insight: null, insightLoading: false, insightError: null, insightBullets: null }),
+  setInsightsReport: (report) => set({ insightsReport: report }),
+  clearInsight: () => set({
+    insight: null,
+    insightLoading: false,
+    insightError: null,
+    insightBullets: null,
+    insightsReport: null,
+  }),
 }))
