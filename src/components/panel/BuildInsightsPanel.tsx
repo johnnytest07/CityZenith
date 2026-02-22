@@ -110,6 +110,7 @@ export function BuildInsightsPanel({ siteContext }: Props) {
       {report && !loading && (
         <InsightsDashboard
           report={report}
+          showScore={false}
           onRegenerate={generate}
           onClear={() => setReport(null)}
           isRegenerating={loading}

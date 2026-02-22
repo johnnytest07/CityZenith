@@ -22,10 +22,17 @@ const PRIORITY_COLORS: Record<string, string> = {
   low:    'bg-gray-500',
 }
 
-/** Renders inline (LP PolicyRef) and (DP) citation tokens with colour highlights */
-function renderCitation(text: string): React.ReactNode[] {
-  const parts = text.split(/(\(LP[^)]*\)|\(DP\))/g)
+/** Renders **bold**, (LP PolicyRef) and (DP) tokens from LLM text */
+function renderText(text: string): React.ReactNode[] {
+  const parts = text.split(/(\*\*.*?\*\*|\(LP[^)]*\)|\(DP\))/g)
   return parts.map((part, i) => {
+    if (/^\*\*.*\*\*$/.test(part)) {
+      return (
+        <strong key={i} className="font-semibold text-white">
+          {part.slice(2, -2)}
+        </strong>
+      )
+    }
     if (/^\(LP[^)]*\)$/.test(part)) {
       return (
         <span key={i} className="text-indigo-400 font-medium not-italic">
@@ -73,7 +80,7 @@ function AnalysisAccordion({ suggestion, hexColor }: { suggestion: CouncilSugges
         <div className="mt-2 space-y-2">
           {suggestion.reasoning.split('\n\n').map((para, i) => (
             <p key={i} className="text-xs text-gray-300 leading-relaxed">
-              {renderCitation(para)}
+              {renderText(para)}
             </p>
           ))}
 
@@ -94,7 +101,7 @@ function AnalysisAccordion({ suggestion, hexColor }: { suggestion: CouncilSugges
               <ul className="space-y-0.5">
                 {suggestion.evidenceSources.map((src, i) => (
                   <li key={i} className="text-[11px] text-gray-500 italic">
-                    · {renderCitation(src)}
+                    · {renderText(src)}
                   </li>
                 ))}
               </ul>
@@ -168,14 +175,14 @@ export function SuggestionCard({ suggestion, onFlyTo }: SuggestionCardProps) {
 
         {/* Rationale */}
         <p className="text-xs text-gray-400 leading-relaxed line-clamp-2 mb-2">
-          {suggestion.rationale}
+          {renderText(suggestion.rationale)}
         </p>
 
         {/* Problem box */}
         {suggestion.problem && (
           <div className="flex gap-1.5 bg-amber-950/30 border border-amber-800/30 rounded-lg px-2.5 py-1.5 mb-2">
             <span className="text-amber-400 shrink-0 text-[10px] mt-0.5">⚠</span>
-            <p className="text-[11px] text-amber-200/80 leading-snug line-clamp-2">{suggestion.problem}</p>
+            <p className="text-[11px] text-amber-200/80 leading-snug line-clamp-2">{renderText(suggestion.problem)}</p>
           </div>
         )}
 
@@ -234,10 +241,10 @@ export function SuggestionCard({ suggestion, onFlyTo }: SuggestionCardProps) {
                     </span>
                     <div className="flex-1 min-w-0">
                       <p className="text-[11px] font-medium text-gray-200 leading-snug">{impl.title}</p>
-                      <p className="text-[10px] text-gray-500 leading-snug mt-0.5">{impl.description}</p>
+                      <p className="text-[10px] text-gray-500 leading-snug mt-0.5">{renderText(impl.description)}</p>
                       {impl.projectedEffect && (
                         <p className="text-[10px] text-green-400/80 leading-snug mt-0.5">
-                          → {impl.projectedEffect}
+                          → {renderText(impl.projectedEffect)}
                         </p>
                       )}
                     </div>
@@ -250,7 +257,7 @@ export function SuggestionCard({ suggestion, onFlyTo }: SuggestionCardProps) {
           {suggestion.overallOutcome && (
             <div className="mt-3 pt-2 border-t border-gray-800">
               <p className="text-[9px] uppercase tracking-widest text-gray-600 mb-1">Projected Outcome</p>
-              <p className="text-[11px] text-green-300/80 leading-relaxed">{suggestion.overallOutcome}</p>
+              <p className="text-[11px] text-green-300/80 leading-relaxed">{renderText(suggestion.overallOutcome)}</p>
             </div>
           )}
 

@@ -1,12 +1,13 @@
 /**
  * Semantic search over ingested local plan chunks stored in MongoDB Atlas.
  *
- * Uses Gemini text-embedding-004 (768-dim) — the same model used during ingestion,
+ * Uses OpenAI text-embedding-3-small (1536-dim) — the same model used during ingestion,
  * so query vectors are compatible with the stored document vectors.
  */
 
-const GEMINI_BASE       = 'https://generativelanguage.googleapis.com/v1'
-const EMBED_MODEL       = 'text-embedding-004'
+import OpenAI from 'openai'
+
+const EMBED_MODEL       = 'text-embedding-3-small'
 const MONGO_DB          = process.env.MONGODB_DB ?? 'cityzenith'
 const PLAN_COLLECTION   = 'council_plan_chunks'
 const VECTOR_INDEX_NAME = 'vector_index'
@@ -19,25 +20,11 @@ export interface PlanChunkResult {
   score:       number
 }
 
-/** Embed a single query string using Gemini text-embedding-004 (RETRIEVAL_QUERY task). */
+/** Embed a single query string using OpenAI text-embedding-3-small. */
 async function embedQuery(text: string, apiKey: string): Promise<number[]> {
-  const res = await fetch(
-    `${GEMINI_BASE}/models/${EMBED_MODEL}:embedContent?key=${apiKey}`,
-    {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        content:  { parts: [{ text }] },
-        taskType: 'RETRIEVAL_QUERY',
-      }),
-    },
-  )
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error(`Gemini embed failed: ${res.status} ${JSON.stringify(body)}`)
-  }
-  const data = await res.json() as { embedding: { values: number[] } }
-  return data.embedding.values
+  const client = new OpenAI({ apiKey })
+  const res = await client.embeddings.create({ model: EMBED_MODEL, input: text })
+  return res.data[0].embedding
 }
 
 /**
@@ -47,7 +34,7 @@ async function embedQuery(text: string, apiKey: string): Promise<number[]> {
  * @param queryText   - The semantic query (typically the stage focus text)
  * @param limit       - Number of chunks to return (default 6)
  *
- * Returns [] if MONGODB_URI / GEMINI_API_KEY are not set, or the collection is empty.
+ * Returns [] if MONGODB_URI / OPENAI_API_KEY are not set, or the collection is empty.
  */
 export async function queryLocalPlan(
   planCorpus: string,
@@ -56,7 +43,7 @@ export async function queryLocalPlan(
 ): Promise<PlanChunkResult[]> {
   if (!process.env.MONGODB_URI) return []
 
-  const apiKey = process.env.GEMINI_API_KEY
+  const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) return []
 
   try {

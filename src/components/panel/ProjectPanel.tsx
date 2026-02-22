@@ -5,6 +5,7 @@ import { useDevStore } from '@/stores/devStore'
 import { PROJECT_TYPE_META, PROJECT_TYPES } from '@/types/project'
 import type { ProjectType, ProjectFinancials, ApprovalLikelihood } from '@/types/project'
 import type { RecommendFactor } from '@/types/devMode'
+import { renderBold } from '@/lib/renderBold'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -133,14 +134,14 @@ function PlanningSection({ approval }: { approval: ApprovalLikelihood }) {
         </div>
       </div>
 
-      <p className="text-[11px] text-gray-400 leading-relaxed">{summary}</p>
+      <p className="text-[11px] text-gray-400 leading-relaxed">{renderBold(summary)}</p>
 
       {riskFactors.length > 0 && (
         <div className="space-y-1">
           {riskFactors.map((r, i) => (
             <div key={i} className="flex gap-2 items-start">
               <span className="text-amber-500 shrink-0 text-[10px] mt-0.5">⚠</span>
-              <span className="text-[11px] text-gray-500 leading-snug">{r}</span>
+              <span className="text-[11px] text-gray-500 leading-snug">{renderBold(r)}</span>
             </div>
           ))}
         </div>
@@ -151,7 +152,7 @@ function PlanningSection({ approval }: { approval: ApprovalLikelihood }) {
           {supportingPrecedents.map((p, i) => (
             <div key={i} className="flex gap-2 items-start">
               <span className="text-indigo-400 shrink-0 text-[10px] mt-0.5">▸</span>
-              <span className="text-[11px] text-gray-500 leading-snug">{p}</span>
+              <span className="text-[11px] text-gray-500 leading-snug">{renderBold(p)}</span>
             </div>
           ))}
         </div>
@@ -187,7 +188,7 @@ function FinancialsSection({ fin }: { fin: ProjectFinancials }) {
       {/* Type-specific financial grid */}
       <FinancialGrid fin={fin} />
 
-      <p className="text-[11px] text-gray-400 leading-relaxed">{fin.summary}</p>
+      <p className="text-[11px] text-gray-400 leading-relaxed">{renderBold(fin.summary)}</p>
 
       {fin.factors.length > 0 && (
         <div className="rounded-lg border border-gray-800 bg-gray-900/60 px-3 py-2">

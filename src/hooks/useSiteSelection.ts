@@ -85,7 +85,8 @@ export function useSiteSelection(mapRef: React.RefObject<MapLibreMap | null>) {
 
       // Signal with a hard 20s timeout — prevents any single request hanging the browser
       const searchSignal = withTimeout(controller.signal, 20_000)
-      const constraintSignal = withTimeout(controller.signal, 15_000)
+      // EA flood-risk WFS can take 20s+ — 30s matches the server's 25s + network headroom
+      const constraintSignal = withTimeout(controller.signal, 30_000)
       const amenitySignal = withTimeout(controller.signal, 20_000)
       const pipelineSignal = withTimeout(controller.signal, 30_000)
 

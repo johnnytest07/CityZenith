@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import type { InsightItem } from '@/types/insights'
+import { renderBold } from '@/lib/renderBold'
 
 const CATEGORY_CONFIG = {
   planning: {
@@ -48,16 +49,10 @@ const PRIORITY_LABEL: Record<string, string> = {
   low:    'Low',
 }
 
-/** Renders **bold** markdown inline as <strong> elements. */
-function BoldText({ text }: { text: string }) {
-  const parts = text.split(/\*\*/)
-  return (
-    <>
-      {parts.map((part, i) =>
-        i % 2 === 1 ? <strong key={i} className="text-white font-semibold">{part}</strong> : part,
-      )}
-    </>
-  )
+const SENTIMENT_CONFIG: Record<string, { label: string; className: string }> = {
+  positive: { label: '▲ Positive', className: 'text-green-400 bg-green-950/50 border-green-800/40' },
+  negative: { label: '▼ Risk',     className: 'text-red-400   bg-red-950/50   border-red-800/40'   },
+  neutral:  { label: '— Context',  className: 'text-gray-500  bg-gray-800/40  border-gray-700/40'  },
 }
 
 /**
@@ -81,7 +76,7 @@ export function InsightCard({ item }: { item: InsightItem }) {
 
           <div className="flex-1 min-w-0">
             {/* Meta row */}
-            <div className="flex items-center gap-1.5 mb-0.5">
+            <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
               <span className={`text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded ${cat.badge}`}>
                 {cat.label}
               </span>
@@ -89,9 +84,17 @@ export function InsightCard({ item }: { item: InsightItem }) {
                 <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${PRIORITY_DOT[item.priority] ?? 'bg-gray-600'}`} />
                 {PRIORITY_LABEL[item.priority] ?? item.priority}
               </span>
+              {item.sentiment && (() => {
+                const s = SENTIMENT_CONFIG[item.sentiment] ?? SENTIMENT_CONFIG.neutral
+                return (
+                  <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded border ${s.className}`}>
+                    {s.label}
+                  </span>
+                )
+              })()}
             </div>
             {/* Headline */}
-            <p className="text-xs text-gray-300 leading-snug"><BoldText text={item.headline} /></p>
+            <p className="text-xs text-gray-300 leading-snug">{renderBold(item.headline)}</p>
           </div>
 
           {/* Chevron */}
@@ -107,7 +110,7 @@ export function InsightCard({ item }: { item: InsightItem }) {
       {/* Drill-down detail */}
       {expanded && (
         <div className="px-3 pb-3 pt-1 border-t border-white/5 space-y-2">
-          <p className="text-xs text-gray-300 leading-relaxed">{item.detail}</p>
+          <p className="text-xs text-gray-300 leading-relaxed">{renderBold(item.detail)}</p>
           {item.evidenceSources.length > 0 && (
             <div className="flex flex-wrap gap-1 pt-0.5">
               {item.evidenceSources.map((src, i) => (

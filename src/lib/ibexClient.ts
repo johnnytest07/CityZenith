@@ -40,7 +40,20 @@ export async function searchByPolygon(
       proposed_floor_area: true,
       document_metadata: true,
     },
-    filters: {},
+    filters: {
+      // Exclude minor householder applications (rear extensions, loft conversions, etc.)
+      // to focus planning precedent on substantive, precedent-setting developments only.
+      normalised_application_type: [
+        'full planning application',
+        'change of use',
+        'listed building consent',
+        'conservation area',
+        'lawful development',
+        'discharge of conditions',
+        'environmental impact',
+        'section 106',
+      ],
+    },
   }
 
   const res = await fetch('/api/ibex/search', {

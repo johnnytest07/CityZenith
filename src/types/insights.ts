@@ -1,6 +1,7 @@
 import type { InsightCategory } from './siteContext'
 
-export type InsightPriority = 'high' | 'medium' | 'low'
+export type InsightPriority  = 'high' | 'medium' | 'low'
+export type InsightSentiment = 'positive' | 'negative' | 'neutral'
 
 /**
  * A single structured insight card.
@@ -18,6 +19,8 @@ export interface InsightItem {
   detail: string
   /** Data sources the insight is grounded in (e.g. "Local Plan Policy H1", "IBEX planning data") */
   evidenceSources: string[]
+  /** Whether this finding is a positive signal, risk/negative, or neutral context */
+  sentiment: InsightSentiment
 }
 
 /**

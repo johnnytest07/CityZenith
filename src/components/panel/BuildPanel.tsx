@@ -4,21 +4,12 @@ import type { BuildingOption, RecommendFactor } from "@/types/devMode";
 import { useDevStore } from "@/stores/devStore";
 import { calculateViabilityScore } from "@/lib/devScore";
 import type { ViabilityScore } from "@/lib/devScore";
+import { renderBold } from '@/lib/renderBold'
 
 const VIABILITY_COLORS: Record<ViabilityScore['label'], { text: string; bar: string; badge: string }> = {
   Viable:      { text: 'text-green-400', bar: 'bg-green-500', badge: 'bg-green-500/15 text-green-400 border-green-500/30' },
   Marginal:    { text: 'text-amber-400', bar: 'bg-amber-400', badge: 'bg-amber-400/15 text-amber-400 border-amber-400/30' },
   Constrained: { text: 'text-red-400',   bar: 'bg-red-500',   badge: 'bg-red-500/15   text-red-400   border-red-500/30'   },
-}
-
-/** Renders text with **bold** markers as highlighted white spans */
-function renderBold(text: string) {
-  const parts = text.split(/\*\*(.+?)\*\*/g)
-  return parts.map((part, i) =>
-    i % 2 === 1
-      ? <span key={i} className="text-white font-semibold">{part}</span>
-      : part,
-  )
 }
 
 const LIKELIHOOD_BADGE: Record<string, string> = {

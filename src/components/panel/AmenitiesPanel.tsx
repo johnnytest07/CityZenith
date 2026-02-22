@@ -1,43 +1,43 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSiteStore } from "@/stores/siteStore";
 import { AMENITY_GROUPS } from "@/types/amenities";
 import type { NearbyAmenity } from "@/types/amenities";
 import { SectionCard } from "./SectionCard";
 import { InsightCallout } from "./InsightCallout";
 
-const OSRM_BASE = "https://router.project-osrm.org/route/v1/foot"
+const OSRM_BASE = "https://router.project-osrm.org/route/v1/foot";
 
 async function fetchOsrmRoute(
   from: [number, number],
   to: [number, number],
 ): Promise<{ coords: [number, number][]; distanceM: number } | null> {
   try {
-    const url = `${OSRM_BASE}/${from[0]},${from[1]};${to[0]},${to[1]}?overview=full&geometries=geojson`
-    const res = await fetch(url, { signal: AbortSignal.timeout(6000) })
-    if (!res.ok) return null
-    const data = await res.json()
-    const route = data?.routes?.[0]
-    if (!route) return null
+    const url = `${OSRM_BASE}/${from[0]},${from[1]};${to[0]},${to[1]}?overview=full&geometries=geojson`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const route = data?.routes?.[0];
+    if (!route) return null;
     return {
       coords: route.geometry.coordinates as [number, number][],
       distanceM: route.distance as number,
-    }
+    };
   } catch {
-    return null
+    return null;
   }
 }
 
 function geomCentre(geom: GeoJSON.Geometry): [number, number] | null {
   if (geom.type === "Polygon" && geom.coordinates[0].length > 0) {
-    const ring = geom.coordinates[0] as [number, number][]
-    const lng = ring.reduce((s, p) => s + p[0], 0) / ring.length
-    const lat = ring.reduce((s, p) => s + p[1], 0) / ring.length
-    return [lng, lat]
+    const ring = geom.coordinates[0] as [number, number][];
+    const lng = ring.reduce((s, p) => s + p[0], 0) / ring.length;
+    const lat = ring.reduce((s, p) => s + p[1], 0) / ring.length;
+    return [lng, lat];
   }
-  if (geom.type === "Point") return geom.coordinates as [number, number]
-  return null
+  if (geom.type === "Point") return geom.coordinates as [number, number];
+  return null;
 }
 
 function fmtDist(m: number): string {
@@ -70,11 +70,21 @@ export function AmenitiesPanel() {
   const [routeLoading, setRouteLoading] = useState(false);
 
   const connectivityBullets =
-    insightBullets?.filter((b) => b.category === "connectivity").map((b) => b.text) ?? [];
+    insightBullets
+      ?.filter((b) => b.category === "connectivity")
+      .map((b) => b.text) ?? [];
   const [expanded, setExpanded] = useState(false);
 
   const amenities: NearbyAmenity[] = siteContext?.nearbyAmenities ?? [];
   const isLoading = loadingStates.amenities;
+
+  useEffect(() => {
+    if (!isLoading) {
+      console.log(
+        `[AmenitiesPanel] amenities count=${amenities.length} isLoading=${isLoading} siteContextExists=${!!siteContext} nearbyAmenitiesField=${JSON.stringify(siteContext?.nearbyAmenities?.length ?? "undefined")}`,
+      );
+    }
+  }, [amenities.length, isLoading, siteContext]);
 
   // Compute which groups are present vs missing
   const presentGroups = AMENITY_GROUPS.filter((g) =>
@@ -120,21 +130,21 @@ export function AmenitiesPanel() {
   const handleRowClick = async (amenity: NearbyAmenity) => {
     const isSame =
       selectedAmenity?.name === amenity.name &&
-      selectedAmenity?.category === amenity.category
+      selectedAmenity?.category === amenity.category;
     if (isSame) {
-      setSelectedAmenity(null)
-      setAmenityRoute(null, null)
-      return
+      setSelectedAmenity(null);
+      setAmenityRoute(null, null);
+      return;
     }
-    setSelectedAmenity(amenity)
-    setAmenityRoute(null, null)
+    setSelectedAmenity(amenity);
+    setAmenityRoute(null, null);
 
-    const centre = siteContext ? geomCentre(siteContext.siteGeometry) : null
+    const centre = siteContext ? geomCentre(siteContext.siteGeometry) : null;
     if (centre) {
-      setRouteLoading(true)
-      const result = await fetchOsrmRoute(centre, [amenity.lng, amenity.lat])
-      setRouteLoading(false)
-      if (result) setAmenityRoute(result.coords, result.distanceM)
+      setRouteLoading(true);
+      const result = await fetchOsrmRoute(centre, [amenity.lng, amenity.lat]);
+      setRouteLoading(false);
+      if (result) setAmenityRoute(result.coords, result.distanceM);
     }
   };
 
@@ -219,7 +229,9 @@ export function AmenitiesPanel() {
                                 <span className="text-gray-600">routing…</span>
                               </>
                             ) : isSelected && amenityRouteDistanceM ? (
-                              <span className="text-violet-400">{walkTime(amenityRouteDistanceM)} by road</span>
+                              <span className="text-violet-400">
+                                {walkTime(amenityRouteDistanceM)} by road
+                              </span>
                             ) : (
                               walkTime(a.distanceM)
                             )}

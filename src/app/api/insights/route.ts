@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import type { SiteContext, InsightCategory } from '@/types/siteContext'
-import type { InsightsReport, InsightItem, InsightPriority } from '@/types/insights'
+import type { InsightsReport, InsightItem, InsightPriority, InsightSentiment } from '@/types/insights'
 import { serialiseSiteContext, type SerialisedSiteContext } from '@/lib/serialiseSiteContext'
 import { queryLocalPlan, type PlanChunkResult } from '@/lib/queryLocalPlan'
 import { CONSTRAINT_LABELS } from '@/types/constraints'
@@ -164,6 +164,7 @@ Return ONLY valid JSON — no markdown fences, no preamble, no trailing text:
       "priority": "high",
       "headline": "1–2 sentences, plain English, max ~25 words. Bold 1–3 key figures with **double asterisks**, e.g. 'The area has a **76% approval rate** for residential schemes, with one HMO refusal on record.'",
       "detail": "2–4 sentences of specific, evidence-grounded analysis. Reference actual application types, decisions, policies, or statistics.",
+      "sentiment": "positive | negative | neutral — whether this finding is a favourable signal, a risk or constraint, or neutral context",
       "evidenceSources": ["IBEX planning data", "Local Plan Policy H1"]
     }
   ]
@@ -203,8 +204,9 @@ function parseInsightsReport(
 
     if (!parsed.summary || !Array.isArray(parsed.items)) return null
 
-    const validCategories: InsightCategory[] = ['planning', 'constraints', 'built_form', 'council', 'connectivity']
+    const validCategories: InsightCategory[]  = ['planning', 'constraints', 'built_form', 'council', 'connectivity']
     const validPriorities: InsightPriority[]  = ['high', 'medium', 'low']
+    const validSentiments: InsightSentiment[] = ['positive', 'negative', 'neutral']
 
     const items: InsightItem[] = (parsed.items as Record<string, unknown>[])
       .filter((item) =>
@@ -220,6 +222,9 @@ function parseInsightsReport(
         priority:        item['priority'] as InsightPriority,
         headline:        item['headline'] as string,
         detail:          item['detail'] as string,
+        sentiment:       validSentiments.includes(item['sentiment'] as InsightSentiment)
+                           ? item['sentiment'] as InsightSentiment
+                           : 'neutral',
         evidenceSources: Array.isArray(item['evidenceSources'])
           ? (item['evidenceSources'] as unknown[]).filter((s): s is string => typeof s === 'string')
           : [],

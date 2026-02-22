@@ -184,6 +184,7 @@ export async function fetchNearbyAmenities(
   lng: number,
   signal?: AbortSignal,
 ): Promise<NearbyAmenity[]> {
+  console.log(`[amenities] fetchNearbyAmenities called — lat=${lat}, lng=${lng}`)
   const query = `[out:json][timeout:25];
 (
   node["amenity"="bus_stop"](around:${RADIUS_M},${lat},${lng});
@@ -212,6 +213,7 @@ export async function fetchNearbyAmenities(
 );
 out center;`
 
+  console.log(`[amenities] POSTing to Overpass (radius=${RADIUS_M}m, supermarket radius=${SUPERMARKET_RADIUS_M}m)`)
   const res = await fetch(OVERPASS_URL, {
     method: 'POST',
     body: query,
@@ -219,29 +221,41 @@ out center;`
     signal,
   })
 
+  console.log(`[amenities] Overpass response: status=${res.status} ok=${res.ok}`)
   if (!res.ok) throw new Error(`Overpass API error: ${res.status}`)
 
   const data = await res.json() as { elements: OverpassElement[] }
+  console.log(`[amenities] Overpass returned ${data.elements.length} raw elements`)
 
   const amenities: NearbyAmenity[] = []
+  let skippedUnclassified = 0
+  let skippedNoCoords = 0
+  let skippedUnnamedPark = 0
 
   for (const el of data.elements) {
     const tags = el.tags ?? {}
     const category = classifyTags(tags)
-    if (!category) continue
+    if (!category) { skippedUnclassified++; continue }
 
     const elLat = el.lat ?? el.center?.lat
     const elLng = el.lon ?? el.center?.lon
-    if (elLat == null || elLng == null) continue
+    if (elLat == null || elLng == null) { skippedNoCoords++; continue }
 
     // Skip unnamed parks — OSM often tags unnamed green patches that clutter the list
-    if (category === 'park' && !tags.name) continue
+    if (category === 'park' && !tags.name) { skippedUnnamedPark++; continue }
 
     const distanceM = Math.round(haversineM(lat, lng, elLat, elLng))
     const name = tags.name ?? tags['name:en'] ?? fallbackName(category)
     const subtype = getSubtype(category, tags)
 
     amenities.push({ category, name, distanceM, subtype, lat: elLat, lng: elLng })
+  }
+
+  console.log(`[amenities] classification: ${amenities.length} kept, ${skippedUnclassified} unclassified, ${skippedNoCoords} no-coords, ${skippedUnnamedPark} unnamed-park`)
+  if (amenities.length > 0) {
+    const byCategory: Record<string, number> = {}
+    for (const a of amenities) byCategory[a.category] = (byCategory[a.category] ?? 0) + 1
+    console.log('[amenities] by category:', byCategory)
   }
 
   // Sort by distance; deduplicate by name+category (OSM can have duplicate nodes)
@@ -255,6 +269,8 @@ out center;`
       return true
     })
 
+  console.log(`[amenities] after dedup: ${deduped.length} amenities`)
+
   // Enrich with road-routed walking distances via OSRM
   return enrichWithRoadDistances([lng, lat], deduped)
 }
@@ -267,8 +283,12 @@ async function enrichWithRoadDistances(
   from: [number, number],
   amenities: NearbyAmenity[],
 ): Promise<NearbyAmenity[]> {
-  if (amenities.length === 0) return amenities
+  if (amenities.length === 0) {
+    console.log('[amenities] enrichWithRoadDistances: skipped (0 amenities)')
+    return amenities
+  }
 
+  console.log(`[amenities] enrichWithRoadDistances: routing ${amenities.length} destinations via OSRM`)
   try {
     // OSRM expects coordinates as "lng,lat" separated by semicolons, source first
     const coords = [from, ...amenities.map((a): [number, number] => [a.lng, a.lat])]
@@ -276,7 +296,9 @@ async function enrichWithRoadDistances(
       .join(';')
 
     const url = `${OSRM_URL}/${coords}?sources=0&annotations=distance`
+    console.log(`[amenities] OSRM request: ${amenities.length} destinations`)
     const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
+    console.log(`[amenities] OSRM response: status=${res.status} ok=${res.ok}`)
     if (!res.ok) return amenities
 
     const data = await res.json() as { distances: (number | null)[][] }
@@ -288,9 +310,11 @@ async function enrichWithRoadDistances(
     })
 
     // Re-sort by road distance after enrichment
+    console.log('[amenities] OSRM enrichment complete')
     return enriched.sort((a, b) => a.distanceM - b.distanceM)
-  } catch {
+  } catch (err) {
     // OSRM unavailable or timed out — keep haversine distances
+    console.warn('[amenities] OSRM enrichment failed (using haversine fallback):', err)
     return amenities
   }
 }

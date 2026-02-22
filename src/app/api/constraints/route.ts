@@ -20,10 +20,11 @@ export async function POST(request: NextRequest) {
     const bbox = geometryToBbox(geometry)
     const url = buildConstraintUrl(constraintType, bbox)
 
+    // EA WFS (flood-risk) is notoriously slow — allow 25s; other gov endpoints get 12s
+    const timeoutMs = constraintType === 'flood-risk' ? 25_000 : 12_000
     const upstream = await fetch(url, {
       headers: { Accept: 'application/json' },
-      // Allow up to 10s for government endpoints which can be slow
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(timeoutMs),
     })
 
     if (!upstream.ok) {

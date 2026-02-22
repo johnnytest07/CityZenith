@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { InsightCard } from './InsightCard'
 import type { InsightsReport } from '@/types/insights'
 import type { InsightItem } from '@/types/insights'
+import { renderBold } from '@/lib/renderBold'
 
 function computeScore(items: InsightItem[]): { total: number; label: 'High' | 'Moderate' | 'Low'; high: number; medium: number; low: number } | null {
   if (items.length === 0) return null
@@ -23,6 +24,7 @@ const SCORE_COLORS = {
 
 interface InsightsDashboardProps {
   report:          InsightsReport
+  showScore?:      boolean
   onRegenerate?:   () => void
   onClear?:        () => void
   isRegenerating?: boolean
@@ -40,6 +42,7 @@ interface InsightsDashboardProps {
  */
 export function InsightsDashboard({
   report,
+  showScore = true,
   onRegenerate,
   onClear,
   isRegenerating,
@@ -60,7 +63,7 @@ export function InsightsDashboard({
   return (
     <div className="space-y-3">
       {/* Score card */}
-      {score && (() => {
+      {showScore && score && (() => {
         const colors = SCORE_COLORS[score.label]
         return (
           <div className="rounded-xl border border-gray-800 bg-gray-900/80 px-4 py-3">
@@ -93,7 +96,7 @@ export function InsightsDashboard({
       })()}
 
       {/* Overall summary */}
-      <p className="text-xs text-gray-400 leading-relaxed">{report.summary}</p>
+      <p className="text-xs text-gray-400 leading-relaxed">{renderBold(report.summary)}</p>
 
       {/* Insight cards */}
       <div className="space-y-1.5">
@@ -135,11 +138,11 @@ export function InsightsDashboard({
 
         {showFullReport && (
           <div className="px-3 pb-4 border-t border-gray-800 space-y-3 pt-3">
-            <p className="text-xs text-gray-400 leading-relaxed">{report.summary}</p>
+            <p className="text-xs text-gray-400 leading-relaxed">{renderBold(report.summary)}</p>
             {report.items.map((item) => (
               <div key={item.id} className="space-y-1">
-                <p className="text-xs font-medium text-gray-200">{item.headline}</p>
-                <p className="text-xs text-gray-400 leading-relaxed">{item.detail}</p>
+                <p className="text-xs font-medium text-gray-200">{renderBold(item.headline)}</p>
+                <p className="text-xs text-gray-400 leading-relaxed">{renderBold(item.detail)}</p>
                 {item.evidenceSources.length > 0 && (
                   <div className="flex flex-wrap gap-1">
                     {item.evidenceSources.map((src, i) => (

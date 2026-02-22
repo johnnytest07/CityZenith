@@ -2,6 +2,7 @@
 
 import { useRenovStore } from '@/stores/renovStore'
 import type { RecommendFactor } from '@/types/devMode'
+import { renderBold } from '@/lib/renderBold'
 
 const fmt = (v: number) =>
   v.toLocaleString('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 0 })
@@ -178,7 +179,7 @@ export function RenovationPanel() {
       </div>
 
       {/* Summary */}
-      <p className="text-[11px] text-gray-400 leading-relaxed">{summary}</p>
+      <p className="text-[11px] text-gray-400 leading-relaxed">{renderBold(summary)}</p>
 
       {/* Factors */}
       {factors.length > 0 && (
