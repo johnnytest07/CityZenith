@@ -35,7 +35,6 @@ export function CouncilAskButton() {
       bounds: bounds ?? DEFAULT_BOUNDS,
       council: councilName,
       planCorpus: council?.planCorpus ?? null,
-      force: true,
     })
   }
 

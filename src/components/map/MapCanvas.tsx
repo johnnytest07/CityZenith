@@ -37,7 +37,7 @@ import {
   hasRoadAccess,
 } from "@/lib/buildValidation";
 import { useProjectStore } from "@/stores/projectStore";
-import { area as turfAreaFn } from "@turf/turf";
+import { area as turfAreaFn, booleanPointInPolygon, point as turfPoint, polygon as turfPolygon } from "@turf/turf";
 import type { ProjectBuilding } from "@/types/project";
 import type { Layer, PickingInfo } from "@deck.gl/core";
 
@@ -693,6 +693,21 @@ export function MapCanvas() {
           if (hits.length === 0) return; // miss — let user try again
           const feat = hits[0];
           const props = feat.properties ?? {};
+
+          // If the vector-tile feature is a MultiPolygon (OSM building groups),
+          // extract only the sub-polygon that actually contains the click point.
+          let singleGeometry: GeoJSON.Geometry | null = feat.geometry ?? null
+          if (singleGeometry?.type === 'MultiPolygon') {
+            const clickPt = turfPoint([clickPoint.lng, clickPoint.lat])
+            const matched = (singleGeometry as GeoJSON.MultiPolygon).coordinates.find(
+              (rings) => {
+                try { return booleanPointInPolygon(clickPt, turfPolygon(rings)) } catch { return false }
+              }
+            )
+            singleGeometry = matched
+              ? { type: 'Polygon', coordinates: matched }
+              : { type: 'Polygon', coordinates: (singleGeometry as GeoJSON.MultiPolygon).coordinates[0] }
+          }
           const rawH =
             props.render_height ?? props.height ?? props.building_height;
           const heightM =
@@ -703,7 +718,7 @@ export function MapCanvas() {
                 : null;
           let footprintM2: number | null = null;
           try {
-            footprintM2 = Math.round(turfAreaFn(feat as GeoJSON.Feature));
+            if (singleGeometry) footprintM2 = Math.round(turfAreaFn({ type: 'Feature', geometry: singleGeometry, properties: {} }))
           } catch {}
           const building: ProjectBuilding = {
             heightM,
@@ -720,7 +735,7 @@ export function MapCanvas() {
             lngLat: clickPoint,
             footprintM2,
             rawProperties: { ...props },
-            geometry: feat.geometry ?? null,
+            geometry: singleGeometry,
           };
           setSelectedBuilding(building);
           setProjectStep("loading");
