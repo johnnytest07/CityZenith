@@ -151,6 +151,7 @@ export function PrecedentList() {
       expanded={expanded}
       onToggle={() => setExpanded((e) => !e)}
     >
+      <ApprovalSignal rate={siteContext?.planningContextStats?.approval_rate ?? null} />
       <div ref={listRef} className="space-y-2 mt-2 max-h-80 overflow-y-auto pr-1">
         {sorted.map((feature, idx) => {
           const p = feature.properties ?? {};
@@ -227,5 +228,36 @@ export function PrecedentList() {
         isLoading={insightLoading && planningBullets.length === 0}
       />
     </SectionCard>
+  );
+}
+
+/** Traffic-light approval likelihood badge computed from the council-wide approval rate. */
+function ApprovalSignal({ rate }: { rate: number | null }) {
+  if (rate === null) return null;
+
+  let dot: string;
+  let label: string;
+  let classes: string;
+
+  if (rate >= 0.65) {
+    dot = 'bg-green-500';
+    label = 'Likely approved';
+    classes = 'text-green-400 bg-green-950/50 border-green-800/50';
+  } else if (rate >= 0.40) {
+    dot = 'bg-amber-500';
+    label = 'Uncertain';
+    classes = 'text-amber-400 bg-amber-950/50 border-amber-800/50';
+  } else {
+    dot = 'bg-red-500';
+    label = 'High refusal risk';
+    classes = 'text-red-400 bg-red-950/50 border-red-800/50';
+  }
+
+  return (
+    <div className={`flex items-center gap-2 mt-2 mb-1 px-2.5 py-1.5 rounded-md border text-xs ${classes}`}>
+      <span className={`w-2 h-2 rounded-full shrink-0 ${dot}`} />
+      <span className="font-medium">{label}</span>
+      <span className="ml-auto opacity-60">{(rate * 100).toFixed(0)}% approval rate</span>
+    </div>
   );
 }

@@ -48,6 +48,30 @@ export function getDecisionStrokeColor(decision: string | null): RgbaColor {
   return DECISION_STROKE_COLORS.Undetermined
 }
 
+import type { SuggestionType } from '@/types/council'
+
+export const SUGGESTION_COLORS: Record<SuggestionType, RgbaColor> = {
+  troubled_area:    [220,  50,  50, 130],
+  opportunity_zone: [ 50, 200, 100, 130],
+  park:             [ 50, 180,  80, 120],
+  housing:          [100, 150, 240, 130],
+  bridge:           [200, 180,  60, 130],
+  community:        [180, 100, 220, 120],
+  mixed_use:        [240, 160,  40, 130],
+  transport:        [ 80, 200, 240, 120],
+}
+
+export const SUGGESTION_STROKE_COLORS: Record<SuggestionType, RgbaColor> = {
+  troubled_area:    [255,  80,  80, 200],
+  opportunity_zone: [ 80, 230, 130, 200],
+  park:             [ 80, 210, 110, 200],
+  housing:          [140, 180, 255, 200],
+  bridge:           [230, 210,  80, 200],
+  community:        [210, 130, 255, 200],
+  mixed_use:        [255, 190,  70, 200],
+  transport:        [110, 230, 255, 200],
+}
+
 /** CSS hex colour for UI badges */
 export const DECISION_HEX: Record<string, string> = {
   Approved: '#16a34a',

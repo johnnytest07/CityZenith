@@ -298,7 +298,7 @@ export function MapCanvas() {
   useEffect(() => { setMarketValueLoading(marketValueLoading); }, [marketValueLoading, setMarketValueLoading]);
 
   const { selectSite } = useSiteSelection(mapLibreRef);
-  const { role, council } = useIdentityStore();
+  const { role, council, isIdentified } = useIdentityStore();
   const {
     suggestions: councilSuggestions,
     selectedSuggestionId,
@@ -395,6 +395,13 @@ export function MapCanvas() {
     // --- Initialise bounds so Market Value layer can fetch before any pan/zoom ---
     const b = map.getBounds();
     setBounds([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]);
+
+    // --- Fly to council area if user is already identified (returning user) ---
+    const identityState = useIdentityStore.getState();
+    if (identityState.isIdentified && identityState.council?.bounds) {
+      const [w, s, e, n] = identityState.council.bounds;
+      (map as unknown as MapLibreMap).fitBounds([[w, s], [e, n]], { padding: 80, duration: 1200 });
+    }
   }, []);
 
   // Re-apply boundary styles whenever the user's identity changes
@@ -411,6 +418,15 @@ export function MapCanvas() {
     );
     return () => clearTimeout(timer);
   }, [role, council]);
+
+  // Fly to council area when the user completes identity selection
+  useEffect(() => {
+    if (!isIdentified || !council?.bounds) return;
+    const map = mapLibreRef.current;
+    if (!map) return;
+    const [w, s, e, n] = council.bounds;
+    map.fitBounds([[w, s], [e, n]], { padding: 80, duration: 1500 });
+  }, [isIdentified, council?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fly to selected amenity location when the user clicks a connectivity row
   useEffect(() => {
