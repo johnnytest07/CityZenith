@@ -232,7 +232,8 @@ export function BuildPanel() {
           <div className="space-y-3">
             {/* Primary card */}
             <div
-              className={`rounded-xl border overflow-hidden transition-colors ${activeIndex === 0 ? "border-violet-600/50 bg-violet-950/20" : "border-gray-800 bg-gray-900/40"}`}
+              onClick={() => switchAlternative(0)}
+              className={`rounded-xl border overflow-hidden transition-colors cursor-pointer ${activeIndex === 0 ? "border-violet-600/50 bg-violet-950/20" : "border-gray-800 bg-gray-900/40 hover:border-gray-700"}`}
             >
               {/* Card header */}
               <div className="px-3 pt-3 pb-2">
@@ -263,33 +264,36 @@ export function BuildPanel() {
                 </div>
               </div>
 
-              {/* Reasoning */}
-              <div className="px-3 pb-2 border-t border-gray-800/50 pt-2">
-                <ul className="space-y-1">
-                  {primary.reasoning.map((point, i) => (
-                    <li
-                      key={i}
-                      className="text-[11px] text-gray-400 leading-relaxed flex gap-1.5"
-                    >
-                      <span className="text-gray-600 shrink-0 mt-0.5">•</span>
-                      <span>{point}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              {/* Factors — max 4, label/value rows */}
-              {primary.factors.length > 0 && (
-                <div className="px-3 pb-3 border-t border-gray-800/50 pt-2">
-                  <p className="text-[9px] uppercase tracking-widest text-gray-600 mb-1.5">
-                    Influencing factors
-                  </p>
-                  <div className="space-y-0">
-                    {primary.factors.slice(0, 4).map((f, i) => (
-                      <FactorRow key={i} factor={f} />
-                    ))}
+              {/* Reasoning + Factors — only when primary is active */}
+              {activeIndex === 0 && (
+                <>
+                  <div className="px-3 pb-2 border-t border-gray-800/50 pt-2">
+                    <ul className="space-y-1">
+                      {primary.reasoning.map((point, i) => (
+                        <li
+                          key={i}
+                          className="text-[11px] text-gray-400 leading-relaxed flex gap-1.5"
+                        >
+                          <span className="text-gray-600 shrink-0 mt-0.5">•</span>
+                          <span>{point}</span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
-                </div>
+
+                  {primary.factors.length > 0 && (
+                    <div className="px-3 pb-3 border-t border-gray-800/50 pt-2">
+                      <p className="text-[9px] uppercase tracking-widest text-gray-600 mb-1.5">
+                        Influencing factors
+                      </p>
+                      <div className="space-y-0">
+                        {primary.factors.slice(0, 4).map((f, i) => (
+                          <FactorRow key={i} factor={f} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
 

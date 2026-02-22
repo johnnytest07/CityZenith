@@ -39,32 +39,45 @@ export function AmenitiesPanel() {
   const amenities: NearbyAmenity[] = siteContext?.nearbyAmenities ?? [];
   const isLoading = loadingStates.amenities;
 
-  // Build summary: nearest transport + nearest supermarket
-  const nearestTransport = amenities.find((a) =>
-    ["bus_stop", "train_station", "subway_station"].includes(a.category),
+  // Compute which groups are present vs missing
+  const presentGroups = AMENITY_GROUPS.filter((g) =>
+    amenities.some((a) => g.categories.includes(a.category)),
   );
-  const nearestShop = amenities.find((a) =>
-    ["supermarket", "convenience"].includes(a.category),
+  const missingGroups = AMENITY_GROUPS.filter(
+    (g) => !amenities.some((a) => g.categories.includes(a.category)),
   );
-
-  const summaryParts: string[] = [];
-  if (nearestTransport)
-    summaryParts.push(
-      `${nearestTransport.name} (${fmtDist(nearestTransport.distanceM)})`,
-    );
-  if (nearestShop)
-    summaryParts.push(
-      `${nearestShop.name} (${fmtDist(nearestShop.distanceM)})`,
-    );
 
   const summary = isLoading ? (
     <span className="text-xs text-gray-700 animate-pulse">Fetching…</span>
   ) : amenities.length === 0 ? (
     <span className="text-xs text-gray-600">No data</span>
   ) : (
-    <p className="text-xs text-gray-500 truncate">
-      {summaryParts.join(" · ") || `${amenities.length} places nearby`}
-    </p>
+    <div className="space-y-1 mt-0.5">
+      {presentGroups.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+          <span className="text-[10px] text-gray-500 shrink-0">Has:</span>
+          {presentGroups.map((g) => (
+            <span
+              key={g.label}
+              className="text-[10px] text-gray-400 flex items-center gap-0.5"
+            >
+              <span>{g.emoji}</span>
+              <span>{g.label}</span>
+            </span>
+          ))}
+        </div>
+      )}
+      {missingGroups.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+          <span className="text-[10px] text-gray-600 shrink-0">No:</span>
+          {missingGroups.map((g) => (
+            <span key={g.label} className="text-[10px] text-gray-700">
+              {g.label}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
   );
 
   const handleRowClick = (amenity: NearbyAmenity) => {

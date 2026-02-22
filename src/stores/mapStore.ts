@@ -14,15 +14,20 @@ interface MapStore {
    */
   selectedBuilding: GeoJSON.Feature | null
 
+  /** Whether the residential market value hex layer is visible */
+  marketValueEnabled: boolean
+
   setViewState: (vs: Partial<ViewState>) => void
   setBounds: (bounds: [number, number, number, number]) => void
   setSelectedBuilding: (feature: GeoJSON.Feature | null) => void
+  setMarketValueEnabled: (v: boolean) => void
 }
 
 export const useMapStore = create<MapStore>((set) => ({
   viewState: DEFAULT_VIEW_STATE,
   bounds: null,
   selectedBuilding: null,
+  marketValueEnabled: false,
 
   setViewState: (vs) =>
     set((state) => ({
@@ -31,4 +36,5 @@ export const useMapStore = create<MapStore>((set) => ({
 
   setBounds: (bounds) => set({ bounds }),
   setSelectedBuilding: (feature) => set({ selectedBuilding: feature }),
+  setMarketValueEnabled: (v) => set({ marketValueEnabled: v }),
 }))

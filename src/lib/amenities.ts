@@ -1,7 +1,9 @@
 import type { NearbyAmenity, AmenityCategory } from '@/types/amenities'
 
 const OVERPASS_URL = 'https://overpass-api.de/api/interpreter'
+const OSRM_URL = 'https://router.project-osrm.org/table/v1/foot'
 const RADIUS_M = 1000
+const SUPERMARKET_RADIUS_M = 2500 // extend to find real supermarkets (Tesco, Sainsbury's etc.)
 
 function haversineM(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000
@@ -18,8 +20,9 @@ function haversineM(lat1: number, lng1: number, lat2: number, lng2: number): num
 function classifyTags(tags: Record<string, string>): AmenityCategory | null {
   const { amenity, shop, leisure, railway, public_transport } = tags
 
-  if (amenity === 'bus_stop') return 'bus_stop'
-  if (public_transport === 'stop_position' && tags.bus === 'yes') return 'bus_stop'
+  // London bus stops are tagged highway=bus_stop, not amenity=bus_stop
+  if (amenity === 'bus_stop' || tags.highway === 'bus_stop') return 'bus_stop'
+  if (public_transport === 'stop_position' && (tags.bus === 'yes' || tags.highway === 'bus_stop')) return 'bus_stop'
 
   // Classify stations — subway takes precedence over generic train
   if (railway === 'station' || railway === 'halt') {
@@ -181,15 +184,18 @@ export async function fetchNearbyAmenities(
   lng: number,
   signal?: AbortSignal,
 ): Promise<NearbyAmenity[]> {
-  const query = `[out:json][timeout:20];
+  const query = `[out:json][timeout:25];
 (
   node["amenity"="bus_stop"](around:${RADIUS_M},${lat},${lng});
+  node["highway"="bus_stop"](around:${RADIUS_M},${lat},${lng});
+  node["public_transport"="stop_position"]["bus"="yes"](around:${RADIUS_M},${lat},${lng});
   node["railway"="station"](around:${RADIUS_M},${lat},${lng});
   way["railway"="station"](around:${RADIUS_M},${lat},${lng});
   node["railway"="halt"](around:${RADIUS_M},${lat},${lng});
   node["public_transport"="station"](around:${RADIUS_M},${lat},${lng});
   node["amenity"="subway_entrance"](around:${RADIUS_M},${lat},${lng});
-  node["shop"="supermarket"](around:${RADIUS_M},${lat},${lng});
+  node["shop"="supermarket"](around:${SUPERMARKET_RADIUS_M},${lat},${lng});
+  way["shop"="supermarket"](around:${SUPERMARKET_RADIUS_M},${lat},${lng});
   node["shop"="grocery"](around:${RADIUS_M},${lat},${lng});
   node["shop"="convenience"](around:${RADIUS_M},${lat},${lng});
   node["leisure"="fitness_centre"](around:${RADIUS_M},${lat},${lng});
@@ -240,7 +246,7 @@ out center;`
 
   // Sort by distance; deduplicate by name+category (OSM can have duplicate nodes)
   const seen = new Set<string>()
-  return amenities
+  const deduped = amenities
     .sort((a, b) => a.distanceM - b.distanceM)
     .filter((a) => {
       const key = `${a.category}:${a.name.toLowerCase()}`
@@ -248,4 +254,43 @@ out center;`
       seen.add(key)
       return true
     })
+
+  // Enrich with road-routed walking distances via OSRM
+  return enrichWithRoadDistances([lng, lat], deduped)
+}
+
+/**
+ * Replaces straight-line distanceM values with actual walking distances via
+ * OSRM's public routing API (foot profile). Falls back to haversine on any error.
+ */
+async function enrichWithRoadDistances(
+  from: [number, number],
+  amenities: NearbyAmenity[],
+): Promise<NearbyAmenity[]> {
+  if (amenities.length === 0) return amenities
+
+  try {
+    // OSRM expects coordinates as "lng,lat" separated by semicolons, source first
+    const coords = [from, ...amenities.map((a): [number, number] => [a.lng, a.lat])]
+      .map(([lng, lat]) => `${lng},${lat}`)
+      .join(';')
+
+    const url = `${OSRM_URL}/${coords}?sources=0&annotations=distance`
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
+    if (!res.ok) return amenities
+
+    const data = await res.json() as { distances: (number | null)[][] }
+    const roadDists = data.distances[0].slice(1) // skip the source→source 0
+
+    const enriched = amenities.map((a, i) => {
+      const rd = roadDists[i]
+      return rd != null ? { ...a, distanceM: Math.round(rd) } : a
+    })
+
+    // Re-sort by road distance after enrichment
+    return enriched.sort((a, b) => a.distanceM - b.distanceM)
+  } catch {
+    // OSRM unavailable or timed out — keep haversine distances
+    return amenities
+  }
 }
