@@ -1,0 +1,5 @@
+# Local data files
+*.jsonl
+*.json
+.DS_Store
+.env

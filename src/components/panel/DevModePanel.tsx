@@ -1,7 +1,9 @@
 "use client";
 
 import type { BuildingOption, RecommendFactor } from "@/types/devMode";
-import { useDevStore } from "@/stores/devStore";
+import { useDevStore } from '@/stores/devStore'
+import { useIdentityStore } from '@/stores/identityStore'
+import { useState } from 'react'
 
 // ─── Factor chip ─────────────────────────────────────────────────────────────
 
@@ -53,10 +55,6 @@ function OptionCard({
   const displayFootprint =
     footprintM2 != null ? Math.round(footprintM2) : option.approxFootprintM2;
 
-  // Three visual states:
-  // 1. Active (currently selected)         → bright violet
-  // 2. Recommended but not active (dimmed) → faint violet + reduced opacity
-  // 3. Unselected alternative              → grey
   const cardClass = isActive
     ? "border-violet-600/70 bg-violet-950/30"
     : isRecommended
@@ -154,7 +152,31 @@ export function DevModePanel() {
     resetToPlace,
     requestComplete,
     switchAlternative,
-  } = useDevStore();
+  } = useDevStore()
+  const { council } = useIdentityStore()
+  const [ingestionStatus, setIngestionStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
+  const [ingestionError, setIngestionError] = useState<string | null>(null)
+
+  const handleIngest = async () => {
+    if (!council) return
+    setIngestionStatus('loading')
+    setIngestionError(null)
+    try {
+      const response = await fetch('/api/intelligence/ingest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ council: council.name }),
+      })
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to start ingestion.')
+      }
+      setIngestionStatus('success')
+    } catch (error) {
+      setIngestionStatus('error')
+      setIngestionError(error instanceof Error ? error.message : 'Unknown error')
+    }
+  }
 
   const { activeIndex, primary, alternatives } = buildRecommendation ?? {
     activeIndex: 0,
@@ -166,18 +188,44 @@ export function DevModePanel() {
   const isCloseable = nodeCount >= 3;
 
   return (
-    <div className="border-b border-gray-800">
-      {/* Header bar */}
-      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-800/60 bg-violet-950/20">
-        <span className="text-[10px] font-semibold text-violet-400 uppercase tracking-wider">
-          Build New
-        </span>
-        <span className="text-[10px] bg-violet-900/50 text-violet-300 px-1.5 py-0.5 rounded capitalize">
-          {buildStep}
-        </span>
+    <div className="border-b border-gray-800 bg-violet-950/20">
+      {/* Intelligence Ingestion */}
+      <div className="px-4 py-3 border-b border-gray-800">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-white">Council Intelligence</h3>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Ingest planning documents for <b>{council?.name || '...'}</b>
+            </p>
+          </div>
+          <button
+            onClick={handleIngest}
+            disabled={!council || ingestionStatus === 'loading'}
+            className="px-3 py-1.5 text-xs font-semibold text-white bg-violet-600 rounded-md hover:bg-violet-500 disabled:bg-gray-600 disabled:cursor-not-allowed"
+          >
+            {ingestionStatus === 'loading' ? 'Ingesting...' : 'Ingest'}
+          </button>
+        </div>
+        {ingestionStatus === 'error' && (
+          <p className="text-xs text-red-400 mt-2">Error: {ingestionError}</p>
+        )}
+        {ingestionStatus === 'success' && (
+          <p className="text-xs text-green-400 mt-2">Ingestion pipeline started successfully in the background.</p>
+        )}
       </div>
 
-      <div className="px-4 py-3 space-y-3">
+      {/* Header */}
+      <div className="px-4 py-3">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-[10px] font-semibold text-violet-400 uppercase tracking-wider">
+            Build New
+          </span>
+          <span className="text-[10px] bg-violet-900/50 text-violet-300 px-1.5 py-0.5 rounded capitalize">
+            {buildStep}
+          </span>
+        </div>
+
+        <div className="space-y-3 mt-2">
         {/* Warnings */}
         {roadWarning && (
           <div className="flex gap-2 bg-amber-950/50 border border-amber-800/50 rounded-lg px-3 py-2">
@@ -291,6 +339,7 @@ export function DevModePanel() {
             </button>
           </div>
         )}
+        </div>
       </div>
     </div>
   );

@@ -17,6 +17,8 @@ interface SiteStore {
   insight: string | null
   insightLoading: boolean
   insightError: string | null
+  /** Whether the server-side local-plan vector search timed out for the last insights request */
+  vectorSearchTimedOut: boolean
 
   /** Structured AI insight bullets, one per category, for inline section display */
   insightBullets: InsightBullet[] | null
@@ -57,6 +59,7 @@ interface SiteStore {
   setInsight: (insight: string) => void
   setInsightLoading: (loading: boolean) => void
   setInsightError: (error: string | null) => void
+  setVectorSearchTimedOut: (v: boolean) => void
   setInsightBullets: (bullets: InsightBullet[]) => void
   setInsightsReport: (report: InsightsReport) => void
   clearInsight: () => void
@@ -85,6 +88,7 @@ export const useSiteStore = create<SiteStore>((set) => ({
   insight: null,
   insightLoading: false,
   insightError: null,
+  vectorSearchTimedOut: false,
   insightBullets: null,
   insightsReport: null,
   hoveredPrecedentId: null,
@@ -137,6 +141,7 @@ export const useSiteStore = create<SiteStore>((set) => ({
       insight: null,
       insightLoading: false,
       insightError: null,
+      vectorSearchTimedOut: false,
       insightBullets: null,
       insightsReport: null,
       hoveredPrecedentId: null,
@@ -154,12 +159,14 @@ export const useSiteStore = create<SiteStore>((set) => ({
   setInsight: (insight) => set({ insight }),
   setInsightLoading: (loading) => set({ insightLoading: loading }),
   setInsightError: (error) => set({ insightError: error }),
+  setVectorSearchTimedOut: (v: boolean) => set({ vectorSearchTimedOut: v }),
   setInsightBullets: (bullets) => set({ insightBullets: bullets }),
   setInsightsReport: (report) => set({ insightsReport: report }),
   clearInsight: () => set({
     insight: null,
     insightLoading: false,
     insightError: null,
+    vectorSearchTimedOut: false,
     insightBullets: null,
     insightsReport: null,
   }),

@@ -343,7 +343,7 @@ export async function POST(request: NextRequest) {
 
       const validateOption = (o: unknown): o is BuildingOption => {
         if (typeof o !== 'object' || o === null) return false
-        const opt = o as BuildingOption
+        const opt = o as any
         if (
           typeof opt.buildingType !== 'string' ||
           typeof opt.style !== 'string' ||

@@ -7,16 +7,20 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "vitest"
+    "test": "vitest",
+    "lint": "next lint",
+    "ingest:local": "ts-node --project intelligence/tsconfig.json intelligence/src/ingest.ts"
   },
   "dependencies": {
-    "@deck.gl/core": "^9.2.9",
-    "@deck.gl/layers": "^9.2.9",
+    "@deck.gl/core": "^9.0.22",
+    "@deck.gl/layers": "^9.0.22",
     "@deck.gl/mapbox": "^9.2.9",
     "@turf/turf": "^7.3.4",
     "maplibre-gl": "^5.18.0",
     "mongodb": "^6.15.0",
     "next": "^15.5.12",
+    "openai": "^6.22.0",
+    "pdf-parse": "^1.1.1",
     "proj4": "^2.20.2",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
@@ -28,6 +32,7 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^25.3.0",
+    "@types/pdf-parse": "^1.1.4",
     "@types/proj4": "^2.5.6",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
@@ -37,6 +42,7 @@
     "jsdom": "^28.1.0",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.2.0",
+    "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
     "vitest": "^4.0.18"
   }

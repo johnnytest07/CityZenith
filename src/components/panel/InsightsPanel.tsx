@@ -16,7 +16,7 @@ import { InsightsDashboard } from '@/components/insights/InsightsDashboard'
  * Auto-triggers once per site after planning data finishes loading.
  */
 export function InsightsPanel() {
-  const { siteContext, loadingStates } = useSiteStore()
+  const { siteContext, loadingStates, vectorSearchTimedOut } = useSiteStore()
   const {
     insight,
     insightsReport,
@@ -37,8 +37,16 @@ export function InsightsPanel() {
       siteContext.planningContextStats !== null
     if (!hasEvidence) return
     generateInsights(siteContext)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [siteContext?.siteId, loadingStates.precedent, loadingStates.stats])
+  }, [
+    siteContext?.siteId,
+    loadingStates.precedent,
+    loadingStates.stats,
+    generateInsights,
+    insight,
+    insightsReport,
+    isLoading,
+    error,
+  ])
 
   if (!siteContext) return null
 
@@ -76,6 +84,12 @@ export function InsightsPanel() {
       onToggle={() => setExpanded((e) => !e)}
     >
       <div className="mt-2">
+        {/* Timeout indicator when local-plan vector search was aborted */}
+        {vectorSearchTimedOut && (
+          <div className="mb-3 text-xs bg-yellow-950/40 border border-amber-700 text-amber-300 rounded-md px-3 py-2">
+            Local plan lookup timed out — insights generated without local-plan context.
+          </div>
+        )}
         {/* Trigger button */}
         {!insight && !insightsReport && !isLoading && !error && (
           <button

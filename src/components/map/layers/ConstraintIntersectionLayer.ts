@@ -102,8 +102,10 @@ export function buildConstraintLayers(constraints: StatutoryConstraints): Layer[
       const flatA = turf.flatten(constraints[typeA].features! as GeoJSON.FeatureCollection)
       const flatB = turf.flatten(constraints[typeB].features! as GeoJSON.FeatureCollection)
 
-      for (const fa of flatA.features) {
-        for (const fb of flatB.features) {
+      for (const fa of (flatA as any).features) {
+        if (!fa?.geometry || (fa.geometry.type !== 'Polygon' && fa.geometry.type !== 'MultiPolygon')) continue
+        for (const fb of (flatB as any).features) {
+          if (!fb?.geometry || (fb.geometry.type !== 'Polygon' && fb.geometry.type !== 'MultiPolygon')) continue
           try {
             const inter = turf.intersect(turf.featureCollection([fa, fb] as GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>[]))
             if (inter) intersectionRecords.push({ typeA, typeB, feature: inter })
@@ -184,7 +186,7 @@ export function buildConstraintLayers(constraints: StatutoryConstraints): Layer[
       )
       // Use centroid of the exclusive area for label placement
       try {
-        safeFillByType.set(type, turf.centroid(safeFill) as GeoJSON.Feature)
+        safeFillByType.set(type, turf.centroid(safeFill as any) as GeoJSON.Feature)
       } catch { /* skip label */ }
     }
   }

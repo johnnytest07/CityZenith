@@ -1,10 +1,14 @@
 'use client'
 
-import { useCallback } from 'react'
+import { useCallback, useEffect } from 'react'
 import { useSiteStore } from '@/stores/siteStore'
 import { useIdentityStore } from '@/stores/identityStore'
+import { useIntelligenceStore } from '@/stores/intelligenceStore'
 import type { SiteContext, InsightBullet } from '@/types/siteContext'
 import type { InsightsReport } from '@/types/insights'
+
+// Simple single-flight guard to prevent duplicate concurrent requests per siteId
+const inflightRequests = new Set<string>()
 
 export function useInsights() {
   const {
@@ -17,13 +21,57 @@ export function useInsights() {
     setInsightError,
     setInsightBullets,
     setInsightsReport,
+    setVectorSearchTimedOut,
   } = useSiteStore()
 
   const { role, council } = useIdentityStore()
+  const { setDocuments, setLoading, setError, clear } = useIntelligenceStore()
+
+  useEffect(() => {
+    // Only councils with a plan corpus should trigger document fetch
+    if (council?.planCorpus) {
+      const fetchDocs = async () => {
+        setLoading(true)
+        try {
+          const response = await fetch('/api/intelligence/documents', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ planCorpus: council.planCorpus }),
+          })
+          if (!response.ok) {
+            const data = await response.json()
+            throw new Error(data.error || 'Failed to fetch documents.')
+          }
+          const documents = await response.json()
+          setDocuments(documents)
+        } catch (error) {
+          setError(error instanceof Error ? error.message : 'Unknown error')
+        }
+      }
+      fetchDocs()
+    } else {
+      clear()
+    }
+  }, [council, setDocuments, setLoading, setError, clear])
 
   const generateInsights = useCallback(async (siteContext: SiteContext) => {
+    const siteId = siteContext?.siteId
+    if (!siteId) {
+      setInsightError('siteContext.siteId is required')
+      return
+    }
+
+    // If a request for this site is already in-flight, ignore duplicate calls
+    if (inflightRequests.has(siteId)) {
+      // another component already triggered generation; don't start again
+      return
+    }
+
+    inflightRequests.add(siteId)
     setInsightLoading(true)
     setInsightError(null)
+    // reset any previous vector-timeout indicator
+    setVectorSearchTimedOut(false)
 
     try {
       const res = await fetch('/api/insights', {
@@ -42,11 +90,14 @@ export function useInsights() {
         bullets?: unknown
         raw?:     string
         insight?: string
+        vectorSearchTimedOut?: boolean
         error?:   string
       }
 
       if (!res.ok) {
         setInsightError(data.error ?? 'Failed to generate insights')
+        // reflect vector timeout flag if present
+        if (typeof data.vectorSearchTimedOut === 'boolean') setVectorSearchTimedOut(data.vectorSearchTimedOut)
         setInsightLoading(false)
         return
       }
@@ -67,11 +118,13 @@ export function useInsights() {
       } else if (typeof data.insight === 'string') {
         setInsight(data.insight)
       }
+      if (typeof data.vectorSearchTimedOut === 'boolean') setVectorSearchTimedOut(data.vectorSearchTimedOut)
     } catch (err) {
       setInsightError(err instanceof Error ? err.message : 'Request failed')
+    } finally {
+      inflightRequests.delete(siteId)
+      setInsightLoading(false)
     }
-
-    setInsightLoading(false)
   }, [role, council, setInsight, setInsightLoading, setInsightError, setInsightBullets, setInsightsReport])
 
   const clearInsights = useCallback(() => {

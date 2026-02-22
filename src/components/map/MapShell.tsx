@@ -30,8 +30,8 @@ export function MapShell() {
   const { buildMode, deactivateBuild } = useDevStore();
   const { role } = useIdentityStore();
 
-  const hasSite = siteContext !== null;
-  const buildActive = buildMode === "new";
+  const hasSite = siteContext !== null
+  const buildActive = buildMode === 'new'
 
   return (
     <IdentityGate>
@@ -70,5 +70,5 @@ export function MapShell() {
         </div>
       )}
     </IdentityGate>
-  );
+  )
 }
