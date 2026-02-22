@@ -22,10 +22,15 @@ interface PlanChunkResult {
 }
 
 async function embedQueryText(text: string, openai: any): Promise<number[]> {
+  const t0 = Date.now()
   const res = await openai.embeddings.create({
     model: EMBED_MODEL,
     input: text,
   })
+  const t1 = Date.now()
+  try {
+    console.log(`embedQueryText: generated embedding for ${String(text).slice(0, 60).replace(/\n/g, ' ')}... in ${t1 - t0}ms`)
+  } catch {}
   return res.data[0].embedding
 }
 
@@ -41,9 +46,12 @@ async function queryLocalPlan(
     const clientPromise = (await import('@/lib/mongoClient')).default
     const client = await clientPromise
     const db = client.db(MONGO_DB)
-
+    const tEmbedStart = Date.now()
     const queryVector = await embedQueryText(queryText, openai)
+    const tEmbedEnd = Date.now()
+    console.log(`queryLocalPlan: embedding for corpus=${planCorpus} took ${tEmbedEnd - tEmbedStart}ms`)
 
+    const tDbStart = Date.now()
     const docs = await db.collection(PLAN_COLLECTION).aggregate([
       {
         $vectorSearch: {
@@ -67,6 +75,10 @@ async function queryLocalPlan(
         },
       },
     ]).toArray()
+    const tDbEnd = Date.now()
+    try {
+      console.log(`queryLocalPlan: Mongo vectorSearch for corpus=${planCorpus} returned ${docs.length} docs in ${tDbEnd - tDbStart}ms`)
+    } catch {}
 
     return docs as PlanChunkResult[]
   } catch {
@@ -305,10 +317,25 @@ function parseInsightsReport(
 
 // ─── Route handler ────────────────────────────────────────────────────────────
 
+/**
+ * Wrap a promise with a timeout so slow external services can't block the route.
+ * Resolves/rejects as the underlying promise, or rejects with Error('timeout')
+ * after `ms` milliseconds.
+ */
+function withTimeout<T>(promise: Promise<T>, ms = 3500): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const id = setTimeout(() => reject(new Error('timeout')), ms)
+    promise.then((v) => { clearTimeout(id); resolve(v) }, (e) => { clearTimeout(id); reject(e) })
+  })
+}
+
 export async function POST(request: NextRequest) {
+  const reqId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`
+  try { console.log(`[/api/insights req:${reqId}] start`) } catch {}
   const geminiKey = process.env.GEMINI_API_KEY
   if (!geminiKey) {
-    return NextResponse.json({ error: 'GEMINI_API_KEY not configured' }, { status: 503 })
+    console.warn(`[/api/insights req:${reqId}] GEMINI_API_KEY not configured`)
+    return NextResponse.json({ error: 'GEMINI_API_KEY not configured', reqId }, { status: 503 })
   }
 
   const openaiKey = process.env.OPENAI_API_KEY
@@ -320,13 +347,37 @@ export async function POST(request: NextRequest) {
   let planCorpus: string | null = null
 
   try {
-    const body = await request.json() as {
+    // Read raw body so we can log malformed payloads for debugging
+    const raw = await request.text()
+    let parsed: any
+    try {
+      parsed = raw ? JSON.parse(raw) : {}
+    } catch (err) {
+      console.warn(`[/api/insights req:${reqId}] Invalid JSON body:`, raw.slice(0, 200))
+      throw new Error('Invalid JSON body or missing siteContext')
+    }
+
+    const body = parsed as {
       siteContext?: SiteContext
       role?:        string
       council?:     string
       planCorpus?:  string
     }
-    if (!body.siteContext) throw new Error('missing siteContext')
+    // Log minimal request info for debugging repeated 400s
+    try {
+      console.log(`[/api/insights req:${reqId}] incoming request`, {
+        hasSiteContext: Boolean(body.siteContext),
+        siteId: body.siteContext?.siteId,
+        planCorpus: body.planCorpus,
+        role: body.role,
+        council: body.council,
+      })
+    } catch {}
+
+    if (!body.siteContext) {
+      console.warn(`[/api/insights req:${reqId}] Missing siteContext; keys:`, Object.keys(body))
+      throw new Error('missing siteContext')
+    }
     siteContext = body.siteContext
     if (body.role === 'council' || body.role === 'developer') role = body.role
     if (typeof body.council    === 'string') council    = body.council
@@ -335,17 +386,28 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body or missing siteContext' }, { status: 400 })
   }
 
-  if (!siteContext?.siteId) {
-    return NextResponse.json({ error: 'siteContext.siteId is required' }, { status: 400 })
+    if (!siteContext?.siteId) {
+    console.warn(`[/api/insights req:${reqId}] Missing siteContext.siteId; siteContext keys:`, Object.keys(siteContext ?? {}))
+    return NextResponse.json({ error: 'siteContext.siteId is required', reqId }, { status: 400 })
   }
 
   const summary = serialiseSiteContext(siteContext)
 
   // Query local plan if a corpus is available for this council
   let planChunks: PlanChunkResult[] = []
+  let vectorSearchTimedOut = false
   if (planCorpus && openai) {
     const searchQuery = buildPlanSearchQuery(summary)
-    planChunks = await queryLocalPlan(planCorpus, searchQuery, openai)
+    try {
+      // Bound the vector search + embedding time so a slow DB or network doesn't block
+      planChunks = await withTimeout(queryLocalPlan(planCorpus, searchQuery, openai), 3500)
+    } catch (err) {
+      // On timeout or error, continue without plan context (non-fatal)
+      console.warn(`[/api/insights req:${reqId}] Local plan vector search failed or timed out; continuing without plan context`, err)
+      // indicate to the client that the vector search did not complete
+      vectorSearchTimedOut = true
+      planChunks = []
+    }
   } else if (planCorpus && !openai) {
     console.warn('OPENAI_API_KEY not set; skipping local plan vector search')
   }
@@ -357,8 +419,8 @@ export async function POST(request: NextRequest) {
     generationConfig: {
       temperature:     0.3,
       maxOutputTokens: 8192,
-      // Thinking budget: 4096 for reasoning + headroom for the JSON output
-      thinkingConfig:  { thinkingBudget: 4096 },
+      // Note: 'thinkingConfig' is not supported by all Gemini endpoints / API versions.
+      // It caused INVALID_ARGUMENT errors in some environments, so we omit it here.
     },
   }
 
@@ -374,8 +436,9 @@ export async function POST(request: NextRequest) {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}))
+      console.warn(`[/api/insights req:${reqId}] Gemini API error ${res.status}`, err)
       return NextResponse.json(
-        { error: `Gemini API error (${res.status})`, details: err },
+        { error: `Gemini API error (${res.status})`, details: err, vectorSearchTimedOut, reqId },
         { status: res.status },
       )
     }
@@ -391,14 +454,16 @@ export async function POST(request: NextRequest) {
     const text  = parts.find((p) => p.text && !p.thought)?.text ?? ''
 
     if (!text) {
-      return NextResponse.json({ error: 'Gemini returned an empty response' }, { status: 502 })
+      console.warn(`[/api/insights req:${reqId}] Gemini returned empty response`)
+      return NextResponse.json({ error: 'Gemini returned an empty response', vectorSearchTimedOut, reqId }, { status: 502 })
     }
 
     const report = parseInsightsReport(text, role, council)
 
     if (!report) {
+      console.warn(`[/api/insights req:${reqId}] Could not parse structured insights`)
       return NextResponse.json(
-        { error: 'Could not parse structured insights from response', raw: text },
+        { error: 'Could not parse structured insights from response', raw: text, vectorSearchTimedOut, reqId },
         { status: 502 },
       )
     }
@@ -410,9 +475,11 @@ export async function POST(request: NextRequest) {
       .map((item) => ({ category: item.category, text: item.headline }))
     const raw = report.items.map((item) => `• ${item.headline}`).join('\n')
 
-    return NextResponse.json({ report, bullets, raw })
+    console.log(`[/api/insights req:${reqId}] returning report with ${report.items.length} items`)
+    return NextResponse.json({ report, bullets, raw, vectorSearchTimedOut, reqId })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    return NextResponse.json({ error: `Gemini request failed: ${message}` }, { status: 502 })
+    console.error(`[/api/insights req:${reqId}] Gemini request failed: ${message}`)
+    return NextResponse.json({ error: `Gemini request failed: ${message}`, vectorSearchTimedOut, reqId }, { status: 502 })
   }
 }

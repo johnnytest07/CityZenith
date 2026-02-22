@@ -14,7 +14,13 @@ export async function embedDocuments(documents: Omit<Document, 'embedding'>[]): 
   for (let i = 0; i < documents.length; i += BATCH_SIZE) {
     const batch = documents.slice(i, i + BATCH_SIZE)
     const inputs = batch.map((d) => d.text)
+    const t0 = Date.now()
     const response = await client.embeddings.create({ model: EMBED_MODEL, input: inputs })
+    const t1 = Date.now()
+    try {
+      console.log(`embedDocuments: batch ${i / BATCH_SIZE + 1} (${inputs.length} inputs) embedding took ${t1 - t0}ms`)
+    } catch {}
+
     response.data.forEach((item: any, index: number) => {
       embeddedDocuments.push({ ...batch[index], embedding: item.embedding })
     })
@@ -27,6 +33,11 @@ export async function createEmbedding(text: string): Promise<number[]> {
   const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) throw new Error('OPENAI_API_KEY environment variable is not set.')
   const client = new OpenAI({ apiKey })
+  const t0 = Date.now()
   const res = await client.embeddings.create({ model: EMBED_MODEL, input: text })
+  const t1 = Date.now()
+  try {
+    console.log(`createEmbedding: input length=${String(text).length} generated in ${t1 - t0}ms`)
+  } catch {}
   return res.data[0].embedding as number[]
 }

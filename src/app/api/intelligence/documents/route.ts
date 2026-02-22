@@ -10,7 +10,10 @@ export async function POST(request: Request) {
   }
 
   try {
+    const start = Date.now()
     const documents = await fetchDocumentsByCouncil(key)
+    const ms = Date.now() - start
+    console.log(`Fetched ${documents.length} intelligence documents for ${key} in ${ms}ms`)
     return NextResponse.json(documents)
   } catch (error) {
     console.error(`Error fetching documents for ${key}:`, error)
