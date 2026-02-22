@@ -186,20 +186,6 @@ export function SuggestionCard({ suggestion, onFlyTo }: SuggestionCardProps) {
           </div>
         )}
 
-        {/* Implementation chips */}
-        {suggestion.implementations.length > 0 && (
-          <div className="flex flex-wrap gap-1 mb-2">
-            {suggestion.implementations.map((impl, i) => (
-              <span
-                key={i}
-                className="px-1.5 py-0.5 text-[10px] rounded bg-gray-800 text-gray-400 border border-gray-700"
-              >
-                + {impl.title || TYPE_LABELS[impl.type] || impl.type}
-                {impl.heightM ? ` ${impl.heightM}m` : ''}
-              </span>
-            ))}
-          </div>
-        )}
 
         {/* Expand button */}
         <button

@@ -7,9 +7,11 @@ import { useIdentityStore } from '@/stores/identityStore'
 import { useMapStore } from '@/stores/mapStore'
 import { StageProgress } from './StageProgress'
 
-// Default to Thamesmead/Greenwich area
-const DEFAULT_REGION = 'thamesmead-greenwich'
 const DEFAULT_BOUNDS: [number, number, number, number] = [0.07, 51.47, 0.17, 51.53]
+
+function regionKey(councilName: string): string {
+  return councilName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+}
 
 export function CouncilAskButton() {
   const { isAnalysing, stages, suggestions, error, clearAnalysis, cachedAt } = useCouncilStore()
@@ -27,10 +29,11 @@ export function CouncilAskButton() {
     setExpanded(true)
     clearAnalysis()
 
+    const councilName = council?.name ?? 'Royal Borough of Greenwich'
     await startCouncilAnalysis({
-      region: DEFAULT_REGION,
+      region: regionKey(councilName),
       bounds: bounds ?? DEFAULT_BOUNDS,
-      council: council?.name ?? 'Royal Borough of Greenwich',
+      council: councilName,
       planCorpus: council?.planCorpus ?? null,
       force: true,
     })

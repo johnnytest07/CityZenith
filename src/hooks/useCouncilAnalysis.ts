@@ -95,6 +95,7 @@ export function useCouncilAnalysis() {
                   }
                   case 'stage_start': {
                     const { stageNum, fromCache } = payload as AnalysisStage
+                    console.debug(`[council] stage ${stageNum}: ${fromCache ? '⚡ from cache' : '🔄 live'}`)
                     receiveStageStart(stageNum, fromCache)
                     break
                   }
