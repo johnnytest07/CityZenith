@@ -1,3 +1,5 @@
+import type { SuggestionType } from '@/types/council'
+
 /** RGBA colour tuples for deck.gl layers */
 export type RgbaColor = [number, number, number, number]
 
@@ -61,4 +63,37 @@ export function getDecisionHex(decision: string | null): string {
   if (d.includes('approv')) return DECISION_HEX.Approved
   if (d.includes('refus') || d.includes('reject')) return DECISION_HEX.Refused
   return DECISION_HEX.Undetermined
+}
+
+export const SUGGESTION_COLORS: Record<SuggestionType, RgbaColor> = {
+  troubled_area:    [239, 68,  68,  100],
+  opportunity_zone: [245, 158, 11,  80],
+  park:             [34,  197, 94,  100],
+  housing:          [168, 85,  247, 160],
+  bridge:           [59,  130, 246, 200],
+  community:        [249, 115, 22,  120],
+  mixed_use:        [14,  165, 233, 100],
+  transport:        [100, 116, 139, 150],
+}
+
+export const SUGGESTION_STROKE_COLORS: Record<SuggestionType, RgbaColor> = {
+  troubled_area:    [239, 68,  68,  220],
+  opportunity_zone: [245, 158, 11,  220],
+  park:             [34,  197, 94,  220],
+  housing:          [168, 85,  247, 220],
+  bridge:           [59,  130, 246, 255],
+  community:        [249, 115, 22,  220],
+  mixed_use:        [14,  165, 233, 220],
+  transport:        [100, 116, 139, 220],
+}
+
+export const SUGGESTION_HEX: Record<SuggestionType, string> = {
+  troubled_area:    '#ef4444',
+  opportunity_zone: '#f59e0b',
+  park:             '#22c55e',
+  housing:          '#a855f7',
+  bridge:           '#3b82f6',
+  community:        '#f97316',
+  mixed_use:        '#0ea5e9',
+  transport:        '#64748b',
 }
