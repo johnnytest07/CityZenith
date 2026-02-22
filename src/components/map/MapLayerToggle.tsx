@@ -2,12 +2,8 @@
 
 import { useMapStore } from '@/stores/mapStore'
 
-/**
- * Floating pill toggle for the market-value hex layer.
- * Positioned bottom-right of the map area, above the MapLibre attribution bar.
- */
 export function MapLayerToggle() {
-  const { marketValueEnabled, setMarketValueEnabled } = useMapStore()
+  const { marketValueEnabled, setMarketValueEnabled, marketValueLoading } = useMapStore()
 
   return (
     <div
@@ -24,7 +20,14 @@ export function MapLayerToggle() {
         ].join(' ')}
         title={marketValueEnabled ? 'Hide market value layer' : 'Show market value layer'}
       >
-        <span>💷</span>
+        {marketValueLoading ? (
+          <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+          </svg>
+        ) : (
+          <span>💷</span>
+        )}
         <span>Market Value</span>
       </button>
     </div>

@@ -262,7 +262,7 @@ async function addCouncilBoundaries(
 
 export function MapCanvas() {
   const mapRef = useRef<MapRef>(null);
-  const { viewState, setViewState, setBounds, marketValueEnabled, bounds } = useMapStore();
+  const { viewState, setViewState, setBounds, marketValueEnabled, bounds, setMarketValueLoading } = useMapStore();
   const {
     siteContext,
     insight,
@@ -294,7 +294,8 @@ export function MapCanvas() {
 
   const mapLibreRef = useRef<MapLibreMap | null>(null);
 
-  const { hexData: marketHexData } = useMarketValue(marketValueEnabled, bounds);
+  const { hexData: marketHexData, loading: marketValueLoading } = useMarketValue(marketValueEnabled, bounds);
+  useEffect(() => { setMarketValueLoading(marketValueLoading); }, [marketValueLoading, setMarketValueLoading]);
 
   const { selectSite } = useSiteSelection(mapLibreRef);
   const { role, council } = useIdentityStore();
@@ -390,6 +391,10 @@ export function MapCanvas() {
     const isCouncilMode = useIdentityStore.getState().role === "council";
     const onsCode = useIdentityStore.getState().council?.onsCode;
     addCouncilBoundaries(map as unknown as MapLibreMap, isCouncilMode, onsCode);
+
+    // --- Initialise bounds so Market Value layer can fetch before any pan/zoom ---
+    const b = map.getBounds();
+    setBounds([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]);
   }, []);
 
   // Re-apply boundary styles whenever the user's identity changes

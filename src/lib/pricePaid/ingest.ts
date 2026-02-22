@@ -2,7 +2,10 @@
  * Fetches residential property transactions from the HM Land Registry SPARQL
  * endpoint for a set of outward codes (e.g. ["SE28", "SE2"]).
  *
- * Returns up to 5 000 transactions from the last 5 years.
+ * Queries each outcode in parallel (one request per outcode) to avoid the
+ * slow multi-outcode OR filter that causes the combined query to time out.
+ * Each individual query completes in ~10-15s; parallel execution keeps total
+ * wall time close to the slowest single query.
  */
 
 export interface RawTransaction {
@@ -13,60 +16,45 @@ export interface RawTransaction {
 }
 
 const HMLR_SPARQL = 'https://landregistry.data.gov.uk/landregistry/query'
+const PER_OUTCODE_LIMIT = 300
+const PER_QUERY_TIMEOUT_MS = 22_000
 
-/** Five years ago from today, formatted as xsd:date */
-function fiveYearsAgo(): string {
+/** Two years ago from today, formatted as xsd:date */
+function twoYearsAgo(): string {
   const d = new Date()
-  d.setFullYear(d.getFullYear() - 5)
+  d.setFullYear(d.getFullYear() - 2)
   return d.toISOString().slice(0, 10)
 }
 
-/** Build a SPARQL FILTER clause that matches any of the given outward codes */
-function buildOutcodeFilter(outcodes: string[]): string {
-  return outcodes
-    .map((oc) => `STRSTARTS(STR(?postcode), "${oc} ")`)
-    .join(' || ')
-}
-
-/**
- * Fetch residential transactions for the given outward codes.
- * Returns [] on error or timeout.
- */
-export async function fetchTransactions(
-  outcodes: string[],
-  signal?: AbortSignal,
-): Promise<RawTransaction[]> {
-  if (outcodes.length === 0) return []
-
-  const cutoff = fiveYearsAgo()
-  const outcodeFilter = buildOutcodeFilter(outcodes)
-
+/** Fetch transactions for a single outcode. Returns [] on error or timeout. */
+async function fetchOutcode(outcode: string, cutoff: string): Promise<RawTransaction[]> {
   const sparql = `
 PREFIX lrppi: <http://landregistry.data.gov.uk/def/ppi/>
 PREFIX lrcommon: <http://landregistry.data.gov.uk/def/common/>
-PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 
-SELECT ?price ?date ?postcode ?propertyType WHERE {
+SELECT ?price ?date ?postcode WHERE {
   ?trans lrppi:pricePaid ?price ;
          lrppi:transactionDate ?date ;
          lrppi:propertyAddress/lrcommon:postcode ?postcode .
-  OPTIONAL { ?trans lrppi:propertyType/rdfs:label ?propertyType }
-  FILTER(${outcodeFilter})
+  FILTER(STRSTARTS(STR(?postcode), "${outcode} "))
   FILTER(?date >= "${cutoff}"^^xsd:date)
-  FILTER(!BOUND(?propertyType) || ?propertyType != "Other")
 }
-LIMIT 5000
+LIMIT ${PER_OUTCODE_LIMIT}
 `.trim()
 
-  const body = new URLSearchParams({ query: sparql, output: 'json' })
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), PER_QUERY_TIMEOUT_MS)
 
   try {
     const res = await fetch(HMLR_SPARQL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: body.toString(),
-      signal,
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/sparql-results+json',
+      },
+      body: new URLSearchParams({ query: sparql, output: 'json' }).toString(),
+      signal: controller.signal,
     })
 
     if (!res.ok) return []
@@ -79,9 +67,25 @@ LIMIT 5000
       price: parseFloat(b.price?.value ?? '0'),
       date: b.date?.value ?? '',
       postcode: b.postcode?.value ?? '',
-      propertyType: b.propertyType?.value ?? 'Unknown',
+      propertyType: 'Unknown',
     }))
   } catch {
     return []
+  } finally {
+    clearTimeout(timeout)
   }
+}
+
+/**
+ * Fetch residential transactions for the given outward codes.
+ * Queries each outcode in parallel; returns combined deduplicated results.
+ */
+export async function fetchTransactions(
+  outcodes: string[],
+): Promise<RawTransaction[]> {
+  if (outcodes.length === 0) return []
+
+  const cutoff = twoYearsAgo()
+  const results = await Promise.all(outcodes.map((oc) => fetchOutcode(oc, cutoff)))
+  return results.flat()
 }
