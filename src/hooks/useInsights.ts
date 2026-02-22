@@ -85,14 +85,19 @@ export function useInsights() {
         }),
       })
 
-      const data = await res.json() as {
-        report?:  unknown
-        bullets?: unknown
-        raw?:     string
-        insight?: string
-        vectorSearchTimedOut?: boolean
-        error?:   string
-      }
+      const [data] = await Promise.all([
+        res.json() as Promise<{
+          report?:  unknown
+          bullets?: unknown
+          raw?:     string
+          insight?: string
+          fromCache?: boolean
+          vectorSearchTimedOut?: boolean
+          error?:   string
+        }>,
+        // Enforce a minimum 2s loading display so cache hits don't look instant
+        new Promise<void>((r) => setTimeout(r, 2000)),
+      ])
 
       if (!res.ok) {
         setInsightError(data.error ?? 'Failed to generate insights')

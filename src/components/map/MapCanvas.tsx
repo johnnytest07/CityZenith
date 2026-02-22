@@ -698,7 +698,7 @@ export function MapCanvas() {
           // extract only the sub-polygon that actually contains the click point.
           let singleGeometry: GeoJSON.Geometry | null = feat.geometry ?? null
           if (singleGeometry?.type === 'MultiPolygon') {
-            const clickPt = turfPoint([clickPoint.lng, clickPoint.lat])
+            const clickPt = turfPoint([clickPoint[0], clickPoint[1]])
             const matched = (singleGeometry as GeoJSON.MultiPolygon).coordinates.find(
               (rings) => {
                 try { return booleanPointInPolygon(clickPt, turfPolygon(rings)) } catch { return false }
