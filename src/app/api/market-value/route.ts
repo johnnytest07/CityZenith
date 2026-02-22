@@ -8,20 +8,37 @@
  *
  * Pipeline:
  *   1. postcodes.io → outward codes for viewport centre
- *   2. HMLR SPARQL → residential transactions last 5yr
- *   3. postcodes.io bulk → postcode → [lng, lat]
- *   4. turf.hexGrid aggregation with relative scores
+ *   2. HMLR SPARQL → residential transactions last 2yr  (cached 1hr per outcode set)
+ *   3. postcodes.io bulk → postcode → [lng, lat]        (cached with transactions)
+ *   4. turf.hexGrid aggregation with relative scores    (recomputed per bounds)
+ *
+ * HMLR SPARQL is slow (~15-20s for a 4-outcode query). The in-process cache means
+ * the first request for a given area is slow; every subsequent toggle/pan is instant.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getViewportOutcodes, geocodePostcodes } from '@/lib/pricePaid/geo'
-import { fetchTransactions } from '@/lib/pricePaid/ingest'
+import { fetchTransactions, type RawTransaction } from '@/lib/pricePaid/ingest'
 import { buildHexGrid, median } from '@/lib/pricePaid/aggregate'
-import * as turf from '@turf/turf'
 
 const EMPTY_FC: GeoJSON.FeatureCollection = {
   type: 'FeatureCollection',
   features: [],
+}
+
+const CACHE_TTL_MS = 60 * 60 * 1000 // 1 hour
+
+interface CacheEntry {
+  transactions: RawTransaction[]
+  coordsMap: Map<string, [number, number]>
+  cachedAt: number
+}
+
+// Module-level cache — persists across requests within the same server process.
+const txCache = new Map<string, CacheEntry>()
+
+function cacheKey(outcodes: string[]): string {
+  return [...outcodes].sort().join('|')
 }
 
 export async function POST(req: NextRequest) {
@@ -52,45 +69,53 @@ export async function POST(req: NextRequest) {
 
   // 1. Get outward codes for the viewport centre (3km radius)
   const outcodes = await getViewportOutcodes(cx, cy, 3000)
+  console.log('[market-value] outcodes:', outcodes)
   if (outcodes.length === 0) {
+    console.log('[market-value] no outcodes found — returning empty')
     return NextResponse.json({ hexGrid: EMPTY_FC, boroughMedian: 0, txCount: 0 })
   }
 
-  // 2. Fetch HMLR transactions (30s timeout)
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 30_000)
-  let transactions
-  try {
-    transactions = await fetchTransactions(outcodes, controller.signal)
-  } catch {
-    return NextResponse.json(
-      { error: 'HMLR data fetch failed' },
-      { status: 502 },
-    )
-  } finally {
-    clearTimeout(timeout)
+  const key = cacheKey(outcodes)
+  const cached = txCache.get(key)
+  const now = Date.now()
+
+  let transactions: RawTransaction[]
+  let coordsMap: Map<string, [number, number]>
+
+  if (cached && now - cached.cachedAt < CACHE_TTL_MS) {
+    console.log('[market-value] cache hit —', cached.transactions.length, 'transactions')
+    transactions = cached.transactions
+    coordsMap = cached.coordsMap
+  } else {
+    // 2. Fetch HMLR transactions in parallel — one request per outcode (~13s each)
+    transactions = await fetchTransactions(outcodes)
+    console.log('[market-value] transactions fetched:', transactions.length)
+
+    if (transactions.length === 0) {
+      console.log('[market-value] no transactions — returning empty')
+      return NextResponse.json({ hexGrid: EMPTY_FC, boroughMedian: 0, txCount: 0 })
+    }
+
+    // 3. Geocode unique postcodes
+    const uniquePostcodes = [...new Set(transactions.map((t) => t.postcode))]
+    coordsMap = await geocodePostcodes(uniquePostcodes)
+    console.log('[market-value] geocoded', coordsMap.size, '/', uniquePostcodes.length, 'postcodes')
+
+    txCache.set(key, { transactions, coordsMap, cachedAt: now })
   }
 
   if (transactions.length === 0) {
     return NextResponse.json({ hexGrid: EMPTY_FC, boroughMedian: 0, txCount: 0 })
   }
 
-  // 3. Geocode unique postcodes
-  const uniquePostcodes = [...new Set(transactions.map((t) => t.postcode))]
-  const coordsMap = await geocodePostcodes(uniquePostcodes)
-
-  // 4. Borough-level median (all transactions)
+  // 4. Borough-level median
   const allPrices = transactions.map((t) => t.price)
   const boroughMedian = median(allPrices)
 
-  // 5. Build hex grid — clip bounds to the actual data extent for efficiency
-  const bboxBounds: [number, number, number, number] = [west, south, east, north]
+  // 5. Build hex grid for current viewport bounds
+  const hexGrid = buildHexGrid(transactions, coordsMap, boroughMedian, [west, south, east, north])
+  const populatedHexes = hexGrid.features.filter((f) => f.properties?.relativeScore != null).length
+  console.log('[market-value] hex grid:', hexGrid.features.length, 'cells,', populatedHexes, 'populated')
 
-  const hexGrid = buildHexGrid(transactions, coordsMap, boroughMedian, bboxBounds)
-
-  return NextResponse.json({
-    hexGrid,
-    boroughMedian,
-    txCount: transactions.length,
-  })
+  return NextResponse.json({ hexGrid, boroughMedian, txCount: transactions.length })
 }
