@@ -19,6 +19,7 @@ interface AnalysisRequest {
 export function useCouncilAnalysis() {
   const {
     startAnalysis,
+    setCacheHit,
     receiveStageStart,
     receiveSuggestion,
     receiveStageComplete,
@@ -87,9 +88,14 @@ export function useCouncilAnalysis() {
               try {
                 const payload = JSON.parse(currentData)
                 switch (currentEvent) {
+                  case 'cache_hit': {
+                    const { cachedAt } = payload as { cachedAt: string }
+                    setCacheHit(cachedAt)
+                    break
+                  }
                   case 'stage_start': {
-                    const { stageNum } = payload as AnalysisStage
-                    receiveStageStart(stageNum)
+                    const { stageNum, fromCache } = payload as AnalysisStage
+                    receiveStageStart(stageNum, fromCache)
                     break
                   }
                   case 'suggestion': {
@@ -135,7 +141,7 @@ export function useCouncilAnalysis() {
         setError(err instanceof Error ? err.message : 'Analysis failed')
       }
     },
-    [startAnalysis, receiveStageStart, receiveSuggestion, receiveStageComplete, finishAnalysis, setError],
+    [startAnalysis, setCacheHit, receiveStageStart, receiveSuggestion, receiveStageComplete, finishAnalysis, setError],
   )
 
   const cancelAnalysis = useCallback(() => {

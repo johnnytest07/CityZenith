@@ -2,16 +2,16 @@ import { create } from 'zustand'
 import type { AnalysisStage, CouncilSuggestion } from '@/types/council'
 
 const INITIAL_STAGES: AnalysisStage[] = [
-  { stageNum: 1,  name: 'Mapping land use and vacancy patterns',            description: 'Identifying underutilised and vacant parcels across the region.', status: 'pending', suggestionCount: 0 },
-  { stageNum: 2,  name: 'Identifying constraint-burdened low-delivery zones', description: 'Locating areas with overlapping statutory constraints limiting development.', status: 'pending', suggestionCount: 0 },
-  { stageNum: 3,  name: 'Analysing planning refusal clusters and stalled sites', description: 'Detecting patterns in refused applications and sites with repeated failures.', status: 'pending', suggestionCount: 0 },
-  { stageNum: 4,  name: 'Querying local plan regeneration policies',         description: 'Extracting opportunity area and regeneration zone designations from the adopted plan.', status: 'pending', suggestionCount: 0 },
-  { stageNum: 5,  name: 'Assessing residential delivery gap vs housing targets', description: 'Comparing approved pipeline to the 5-year housing land supply target.', status: 'pending', suggestionCount: 0 },
-  { stageNum: 6,  name: 'Evaluating green infrastructure and open space deficit', description: 'Measuring open space provision against national and local accessibility standards.', status: 'pending', suggestionCount: 0 },
-  { stageNum: 7,  name: 'Identifying transport and connectivity gaps',        description: 'Pinpointing areas with poor public transport access and missing active travel links.', status: 'pending', suggestionCount: 0 },
-  { stageNum: 8,  name: 'Synthesising and ranking opportunity zones',         description: 'Cross-referencing all evidence layers to score and prioritise opportunity zones.', status: 'pending', suggestionCount: 0 },
-  { stageNum: 9,  name: 'Generating implementation proposals per zone',       description: 'Producing concrete spatial interventions for each ranked opportunity.', status: 'pending', suggestionCount: 0 },
-  { stageNum: 10, name: 'Producing policy-backed executive summary',          description: 'Synthesising findings into an officer-ready summary with Local Plan citations.', status: 'pending', suggestionCount: 0 },
+  { stageNum: 1,  name: 'Land use & vacancy audit',              description: 'Identifying underutilised and vacant parcels across the region.',                                    status: 'pending', suggestionCount: 0 },
+  { stageNum: 2,  name: 'Statutory constraint mapping',          description: 'Mapping constraint-burdened zones and assessing proportionality to planning need.',                  status: 'pending', suggestionCount: 0 },
+  { stageNum: 3,  name: 'Planning performance analysis',         description: 'Detecting refusal clusters, stalled schemes, and systemic delivery blockages.',                      status: 'pending', suggestionCount: 0 },
+  { stageNum: 4,  name: 'Local plan opportunity areas',          description: 'Extracting regeneration allocations and strategic sites from the adopted Local Plan.',                status: 'pending', suggestionCount: 0 },
+  { stageNum: 5,  name: 'Housing delivery & pipeline',           description: 'Comparing approved pipeline to housing targets and identifying acute under-delivery zones.',         status: 'pending', suggestionCount: 0 },
+  { stageNum: 6,  name: 'Green & blue infrastructure deficit',   description: 'Measuring open space and green infrastructure provision against Fields in Trust standards.',         status: 'pending', suggestionCount: 0 },
+  { stageNum: 7,  name: 'Transport & connectivity gaps',         description: 'Pinpointing low PTAL zones, missing active travel links, and disconnected communities.',            status: 'pending', suggestionCount: 0 },
+  { stageNum: 8,  name: 'Economic & employment challenges',      description: 'Identifying employment land loss, vacant commercial premises, and business district decline.',       status: 'pending', suggestionCount: 0 },
+  { stageNum: 9,  name: 'Opportunity zone synthesis',           description: 'Cross-referencing all evidence layers to rank highest-priority opportunity zones.',                  status: 'pending', suggestionCount: 0 },
+  { stageNum: 10, name: 'Implementation & delivery proposals',  description: 'Producing concrete spatial interventions per opportunity zone with delivery mechanisms.',            status: 'pending', suggestionCount: 0 },
 ]
 
 interface CouncilStore {
@@ -22,9 +22,12 @@ interface CouncilStore {
   selectedSuggestionId: string | null
   hoveredSuggestionId: string | null
   error: string | null
+  fromCache: boolean
+  cachedAt: string | null
 
   startAnalysis: () => void
-  receiveStageStart: (stageNum: number) => void
+  setCacheHit: (cachedAt: string) => void
+  receiveStageStart: (stageNum: number, fromCache?: boolean) => void
   receiveSuggestion: (suggestion: CouncilSuggestion) => void
   receiveStageComplete: (stageNum: number, suggestionCount: number) => void
   finishAnalysis: () => void
@@ -42,6 +45,8 @@ export const useCouncilStore = create<CouncilStore>((set) => ({
   selectedSuggestionId: null,
   hoveredSuggestionId: null,
   error: null,
+  fromCache: false,
+  cachedAt: null,
 
   startAnalysis: () =>
     set({
@@ -51,13 +56,17 @@ export const useCouncilStore = create<CouncilStore>((set) => ({
       currentStageNum: null,
       error: null,
       selectedSuggestionId: null,
+      fromCache: false,
+      cachedAt: null,
     }),
 
-  receiveStageStart: (stageNum) =>
+  setCacheHit: (cachedAt) => set({ fromCache: true, cachedAt }),
+
+  receiveStageStart: (stageNum, fromCache) =>
     set((state) => ({
       currentStageNum: stageNum,
       stages: state.stages.map((s) =>
-        s.stageNum === stageNum ? { ...s, status: 'running' } : s,
+        s.stageNum === stageNum ? { ...s, status: 'running', fromCache } : s,
       ),
     })),
 

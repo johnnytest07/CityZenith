@@ -37,6 +37,7 @@ export const SUPPORTED_COUNCILS: Council[] = [
     id: 'enfield',
     name: 'Enfield',
     planCorpus: 'Enfield',
+    onsCode: 'E09000010',
     bounds: [-0.11, 51.61, 0.07, 51.72],
   },
   {

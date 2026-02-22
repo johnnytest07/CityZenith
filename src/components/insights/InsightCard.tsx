@@ -48,6 +48,18 @@ const PRIORITY_LABEL: Record<string, string> = {
   low:    'Low',
 }
 
+/** Renders **bold** markdown inline as <strong> elements. */
+function BoldText({ text }: { text: string }) {
+  const parts = text.split(/\*\*/)
+  return (
+    <>
+      {parts.map((part, i) =>
+        i % 2 === 1 ? <strong key={i} className="text-white font-semibold">{part}</strong> : part,
+      )}
+    </>
+  )
+}
+
 /**
  * Expandable insight card.
  * Face shows icon + category badge + priority dot + headline.
@@ -79,7 +91,7 @@ export function InsightCard({ item }: { item: InsightItem }) {
               </span>
             </div>
             {/* Headline */}
-            <p className="text-xs text-gray-200 leading-snug font-medium">{item.headline}</p>
+            <p className="text-xs text-gray-300 leading-snug"><BoldText text={item.headline} /></p>
           </div>
 
           {/* Chevron */}

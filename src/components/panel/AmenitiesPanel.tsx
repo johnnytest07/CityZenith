@@ -7,6 +7,39 @@ import type { NearbyAmenity } from "@/types/amenities";
 import { SectionCard } from "./SectionCard";
 import { InsightCallout } from "./InsightCallout";
 
+const OSRM_BASE = "https://router.project-osrm.org/route/v1/foot"
+
+async function fetchOsrmRoute(
+  from: [number, number],
+  to: [number, number],
+): Promise<{ coords: [number, number][]; distanceM: number } | null> {
+  try {
+    const url = `${OSRM_BASE}/${from[0]},${from[1]};${to[0]},${to[1]}?overview=full&geometries=geojson`
+    const res = await fetch(url, { signal: AbortSignal.timeout(6000) })
+    if (!res.ok) return null
+    const data = await res.json()
+    const route = data?.routes?.[0]
+    if (!route) return null
+    return {
+      coords: route.geometry.coordinates as [number, number][],
+      distanceM: route.distance as number,
+    }
+  } catch {
+    return null
+  }
+}
+
+function geomCentre(geom: GeoJSON.Geometry): [number, number] | null {
+  if (geom.type === "Polygon" && geom.coordinates[0].length > 0) {
+    const ring = geom.coordinates[0] as [number, number][]
+    const lng = ring.reduce((s, p) => s + p[0], 0) / ring.length
+    const lat = ring.reduce((s, p) => s + p[1], 0) / ring.length
+    return [lng, lat]
+  }
+  if (geom.type === "Point") return geom.coordinates as [number, number]
+  return null
+}
+
 function fmtDist(m: number): string {
   if (m < 100) return `<100m`;
   if (m < 1000) return `${m}m`;
@@ -30,7 +63,11 @@ export function AmenitiesPanel() {
     insightLoading,
     selectedAmenity,
     setSelectedAmenity,
+    amenityRoute,
+    amenityRouteDistanceM,
+    setAmenityRoute,
   } = useSiteStore();
+  const [routeLoading, setRouteLoading] = useState(false);
 
   const connectivityBullets =
     insightBullets?.filter((b) => b.category === "connectivity").map((b) => b.text) ?? [];
@@ -80,13 +117,25 @@ export function AmenitiesPanel() {
     </div>
   );
 
-  const handleRowClick = (amenity: NearbyAmenity) => {
-    setSelectedAmenity(
+  const handleRowClick = async (amenity: NearbyAmenity) => {
+    const isSame =
       selectedAmenity?.name === amenity.name &&
-        selectedAmenity?.category === amenity.category
-        ? null
-        : amenity,
-    );
+      selectedAmenity?.category === amenity.category
+    if (isSame) {
+      setSelectedAmenity(null)
+      setAmenityRoute(null, null)
+      return
+    }
+    setSelectedAmenity(amenity)
+    setAmenityRoute(null, null)
+
+    const centre = siteContext ? geomCentre(siteContext.siteGeometry) : null
+    if (centre) {
+      setRouteLoading(true)
+      const result = await fetchOsrmRoute(centre, [amenity.lng, amenity.lat])
+      setRouteLoading(false)
+      if (result) setAmenityRoute(result.coords, result.distanceM)
+    }
   };
 
   return (
@@ -159,10 +208,21 @@ export function AmenitiesPanel() {
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           <span className="text-xs font-semibold text-gray-200 tabular-nums">
-                            {fmtDist(a.distanceM)}
+                            {isSelected && amenityRouteDistanceM
+                              ? fmtDist(Math.round(amenityRouteDistanceM))
+                              : fmtDist(a.distanceM)}
                           </span>
-                          <span className="text-[10px] text-gray-600 tabular-nums whitespace-nowrap">
-                            {walkTime(a.distanceM)}
+                          <span className="text-[10px] text-gray-500 tabular-nums whitespace-nowrap flex items-center gap-1">
+                            {isSelected && routeLoading ? (
+                              <>
+                                <span className="w-2 h-2 border border-violet-500 border-t-violet-200 rounded-full animate-spin shrink-0" />
+                                <span className="text-gray-600">routing…</span>
+                              </>
+                            ) : isSelected && amenityRouteDistanceM ? (
+                              <span className="text-violet-400">{walkTime(amenityRouteDistanceM)} by road</span>
+                            ) : (
+                              walkTime(a.distanceM)
+                            )}
                           </span>
                         </div>
                       </button>
@@ -175,8 +235,9 @@ export function AmenitiesPanel() {
 
           {selectedAmenity && (
             <p className="text-[10px] text-gray-600 pt-1">
-              Click again to deselect · Map shows route to{" "}
-              {selectedAmenity.name}
+              Click again to deselect ·{" "}
+              {amenityRoute ? "Walking route to" : "Locating"}{" "}
+              <span className="text-gray-400">{selectedAmenity.name}</span>
             </p>
           )}
 

@@ -26,6 +26,31 @@ interface PostcodesIoBulkResponse {
 }
 
 /**
+ * Return outward codes covering the full viewport by querying the centre
+ * and all four corners.  Deduplicates results.
+ */
+export async function getViewportBoundsOutcodes(
+  west: number,
+  south: number,
+  east: number,
+  north: number,
+): Promise<string[]> {
+  const cx = (west + east) / 2
+  const cy = (south + north) / 2
+  const queryPoints: [number, number][] = [
+    [cx, cy],
+    [west, south],
+    [east, south],
+    [west, north],
+    [east, north],
+  ]
+  const results = await Promise.all(
+    queryPoints.map(([lng, lat]) => getViewportOutcodes(lng, lat, 2000)),
+  )
+  return [...new Set(results.flat())]
+}
+
+/**
  * Return outward codes (e.g. ["SE28", "SE2", "DA18"]) that cover the given
  * map centre within `radiusM` metres.  Returns [] on error or empty result.
  */

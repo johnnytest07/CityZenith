@@ -4,6 +4,30 @@ import type { BuildingOption, RecommendFactor } from "@/types/devMode";
 import { useDevStore } from '@/stores/devStore'
 import { useIdentityStore } from '@/stores/identityStore'
 import { useState } from 'react'
+import { calculateViabilityScore } from '@/lib/devScore'
+import type { ViabilityScore } from '@/lib/devScore'
+
+const VIABILITY_COLORS: Record<ViabilityScore['label'], { text: string; bar: string; badge: string }> = {
+  Viable:      { text: 'text-green-400', bar: 'bg-green-500', badge: 'bg-green-500/15 text-green-400 border-green-500/30' },
+  Marginal:    { text: 'text-amber-400', bar: 'bg-amber-400', badge: 'bg-amber-400/15 text-amber-400 border-amber-400/30' },
+  Constrained: { text: 'text-red-400',   bar: 'bg-red-500',   badge: 'bg-red-500/15   text-red-400   border-red-500/30'   },
+}
+
+/** Renders text with **bold** markers as highlighted white spans */
+function renderBold(text: string) {
+  const parts = text.split(/\*\*(.+?)\*\*/g)
+  return parts.map((part, i) =>
+    i % 2 === 1
+      ? <span key={i} className="text-white font-semibold">{part}</span>
+      : part,
+  )
+}
+
+const LIKELIHOOD_BADGE: Record<string, string> = {
+  high:   'bg-green-950/60 text-green-300 border-green-800/50',
+  medium: 'bg-amber-950/60 text-amber-300 border-amber-800/50',
+  low:    'bg-red-950/60   text-red-300   border-red-800/50',
+}
 
 // ─── Factor chip ─────────────────────────────────────────────────────────────
 
@@ -81,7 +105,14 @@ function OptionCard({
             </span>
           )}
         </div>
-        <p className="text-xs text-gray-500">{option.style}</p>
+        <div className="flex items-center gap-1.5">
+          <p className="text-xs text-gray-500">{option.style}</p>
+          {option.likelihood && (
+            <span className={`text-[9px] font-semibold border px-1.5 py-0.5 rounded-full uppercase tracking-wide ${LIKELIHOOD_BADGE[option.likelihood]}`}>
+              {option.likelihood}
+            </span>
+          )}
+        </div>
 
         {/* Stat row */}
         <div className="flex gap-3 mt-2">
@@ -100,10 +131,10 @@ function OptionCard({
           ).map((point, i) => (
             <li
               key={i}
-              className="text-xs text-gray-400 leading-relaxed flex gap-1.5"
+              className="text-xs text-gray-400 leading-snug flex gap-1.5"
             >
               <span className="text-gray-500 shrink-0 mt-0.5">•</span>
-              <span>{point}</span>
+              <span>{renderBold(point)}</span>
             </li>
           ))}
         </ul>
@@ -186,6 +217,12 @@ export function DevModePanel() {
 
   const nodeCount = polygonNodes.length;
   const isCloseable = nodeCount >= 3;
+
+  const activeOption = primary
+    ? (activeIndex === 0 ? primary : (alternatives[activeIndex - 1] ?? primary))
+    : null
+  const viabilityScore = activeOption ? calculateViabilityScore(activeOption) : null
+  const viabilityColors = viabilityScore ? VIABILITY_COLORS[viabilityScore.label] : null
 
   return (
     <div className="border-b border-gray-800 bg-violet-950/20">
@@ -294,6 +331,34 @@ export function DevModePanel() {
         {/* ── Result step ── */}
         {buildStep === "result" && primary && (
           <div className="space-y-3">
+            {/* Viability score card */}
+            {viabilityScore && viabilityColors && (
+              <div className="rounded-xl border border-gray-800 bg-gray-900/80 px-4 py-3">
+                <div className="flex items-center justify-between mb-2.5">
+                  <div className="flex items-baseline gap-1">
+                    <span className={`text-3xl font-bold tabular-nums leading-none ${viabilityColors.text}`}>
+                      {viabilityScore.total}
+                    </span>
+                    <span className="text-sm text-gray-600 font-medium">/100</span>
+                  </div>
+                  <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold border ${viabilityColors.badge}`}>
+                    {viabilityScore.label}
+                  </span>
+                </div>
+                <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden mb-3">
+                  <div
+                    className={`h-full rounded-full transition-all duration-700 ease-out ${viabilityColors.bar}`}
+                    style={{ width: `${viabilityScore.total}%` }}
+                  />
+                </div>
+                <div className="flex items-center gap-3 text-[10px] text-gray-500 flex-wrap">
+                  <span><span className="text-green-400 font-semibold">{viabilityScore.positiveFactors}</span> positive</span>
+                  <span><span className="text-gray-400 font-semibold">{viabilityScore.neutralFactors}</span> neutral</span>
+                  <span><span className="text-red-400 font-semibold">{viabilityScore.negativeFactors}</span> negative</span>
+                </div>
+              </div>
+            )}
+
             {/* Primary is always pinned at the top.
                 Dimmed when an alternative is active; click to re-select. */}
             <OptionCard

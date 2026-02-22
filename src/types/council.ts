@@ -17,6 +17,8 @@ export interface ImplementationOption {
   heightM: number | null        // null = flat; number = 3D extrusion height
   color: [number, number, number, number]
   policyBasis: string
+  order: number                 // 1-indexed delivery sequence
+  projectedEffect: string       // specific projected outcome of completing this step
   /** Pre-computed polygon from centerPoint + radiusM buffer (set at normalisation time) */
   geometry?: GeoJSON.Geometry
 }
@@ -26,6 +28,7 @@ export interface CouncilSuggestion {
   stage: number
   geometry: GeoJSON.Geometry     // approximate area polygon (buffer of centerPoint)
   type: SuggestionType
+  status: 'existing' | 'proposed'
   title: string                  // e.g. "South Thamesmead Industrial Zone"
   rationale: string              // 1-2 sentences for tooltip
   reasoning: string              // 3-5 paragraphs for expand dropdown
@@ -33,6 +36,11 @@ export interface CouncilSuggestion {
   evidenceSources: string[]
   policyBasis: string            // e.g. "Local Plan Policy RE1"
   implementations: ImplementationOption[]
+  problem: string                // 1-2 sentences naming the specific issue or gap
+  overallOutcome: string         // projected outcome if the full delivery plan is executed
+  parentId?: string              // ID of parent suggestion (set by post-processing)
+  parentTitle?: string           // title of parent suggestion (set by post-processing)
+  relatedIds?: string[]          // IDs of child/sibling suggestions (set by post-processing)
 }
 
 export interface AnalysisStage {
@@ -41,4 +49,5 @@ export interface AnalysisStage {
   description: string
   status: 'pending' | 'running' | 'complete'
   suggestionCount: number
+  fromCache?: boolean
 }

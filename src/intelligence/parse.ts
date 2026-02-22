@@ -1,7 +1,6 @@
 import { randomUUID } from 'crypto'
 import fs from 'fs/promises'
 import path from 'path'
-import pdf from 'pdf-parse'
 import type { Document } from './types'
 
 const PDF_FILES = [
@@ -72,6 +71,7 @@ export async function parseCouncilData(): Promise<Omit<Document, 'embedding'>[]>
     const filePath = path.join(process.cwd(), fileInfo.fileName)
     try {
       const dataBuffer = await fs.readFile(filePath)
+      const { default: pdf } = await import('pdf-parse')
       const pdfData = await pdf(dataBuffer)
       const chunks = chunkPdfText(pdfData.text)
       let currentSection = 'Introduction'

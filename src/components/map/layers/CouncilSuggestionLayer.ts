@@ -1,11 +1,26 @@
-import { GeoJsonLayer, PolygonLayer, PathLayer } from '@deck.gl/layers'
+import { GeoJsonLayer, PolygonLayer, PathLayer, ScatterplotLayer } from '@deck.gl/layers'
 import type { Layer } from '@deck.gl/core'
 import type { CouncilSuggestion } from '@/types/council'
 import { SUGGESTION_COLORS, SUGGESTION_STROKE_COLORS } from '@/lib/colors'
 
+/** Extract centroid [lng, lat] from a polygon geometry (mean of first ring) */
+function centroidOf(geometry: GeoJSON.Geometry): [number, number] {
+  if (geometry.type === 'Polygon') {
+    const ring = geometry.coordinates[0]
+    const lng = ring.reduce((sum, c) => sum + c[0], 0) / ring.length
+    const lat = ring.reduce((sum, c) => sum + c[1], 0) / ring.length
+    return [lng, lat]
+  }
+  if (geometry.type === 'Point') {
+    return geometry.coordinates as [number, number]
+  }
+  return [0, 0]
+}
+
 /**
  * Creates deck.gl layers for all council suggestions:
- * - Flat GeoJsonLayer for area suggestions (troubled_area, opportunity_zone, park, community, mixed_use, transport)
+ * - ScatterplotLayer (proposed) — solid filled circles
+ * - ScatterplotLayer (existing) — ring-only circles (grey)
  * - Extruded PolygonLayer for housing implementations
  * - PathLayer for bridge implementations
  * - Selected highlight (white outline)
@@ -22,47 +37,67 @@ export function createCouncilSuggestionLayers(
 
   if (suggestions.length === 0) return layers
 
-  // ── Flat area polygons ────────────────────────────────────────────────
-  const areaTypes = new Set(['troubled_area', 'opportunity_zone', 'park', 'community', 'mixed_use', 'transport'])
-  const areaFeatures: GeoJSON.Feature[] = suggestions
-    .filter((s) => areaTypes.has(s.type) && (!selectedId || s.id === selectedId))
-    .map((s) => ({
-      type: 'Feature' as const,
-      geometry: s.geometry,
-      properties: { id: s.id, type: s.type, title: s.title, rationale: s.rationale },
-    }))
+  const visibleSuggestions = selectedId ? suggestions.filter((s) => s.id === selectedId) : suggestions
+  const proposedSuggestions = visibleSuggestions.filter((s) => s.status !== 'existing')
+  const existingSuggestions = visibleSuggestions.filter((s) => s.status === 'existing')
 
-  if (areaFeatures.length > 0) {
+  // ── Proposed suggestions — solid filled circles ───────────────────────
+  if (proposedSuggestions.length > 0) {
     layers.push(
-      new GeoJsonLayer({
-        id: 'council-suggestions-area',
-        data: { type: 'FeatureCollection', features: areaFeatures },
-        pickable: true,
+      new ScatterplotLayer<CouncilSuggestion>({
+        id: 'council-proposed-circles',
+        data: proposedSuggestions,
+        getPosition: (s) => centroidOf(s.geometry),
+        getRadius: (s) => Math.min(s.implementations[0]?.radiusM ?? 200, 600),
+        getFillColor: (s) => {
+          const base = SUGGESTION_COLORS[s.type] ?? [150, 150, 150, 160]
+          if (selectedId && s.id !== selectedId) return [base[0], base[1], base[2], 40]
+          return base
+        },
+        getLineColor: (s) => SUGGESTION_STROKE_COLORS[s.type] ?? [150, 150, 150, 220],
         stroked: true,
         filled: true,
-        extruded: false,
-        getFillColor: (f: GeoJSON.Feature) => {
-          const type = f.properties?.type as keyof typeof SUGGESTION_COLORS
-          return SUGGESTION_COLORS[type] ?? [150, 150, 150, 80]
-        },
-        getLineColor: (f: GeoJSON.Feature) => {
-          const type = f.properties?.type as keyof typeof SUGGESTION_STROKE_COLORS
-          return SUGGESTION_STROKE_COLORS[type] ?? [150, 150, 150, 200]
-        },
-        lineWidthMinPixels: 1.5,
-        parameters: { depthTest: false, depthMask: false },
+        lineWidthMinPixels: 2,
+        radiusUnits: 'meters',
+        pickable: true,
         onClick: (info) => {
-          const id = info.object?.properties?.id as string | undefined
-          if (id && onSuggestionClick) {
-            onSuggestionClick(id)
+          if (info.object && onSuggestionClick) {
+            onSuggestionClick(info.object.id)
             return true
           }
         },
         onHover: (info) => {
-          const id = info.object?.properties?.id as string | undefined
-          onSuggestionHover?.(id ?? null)
+          onSuggestionHover?.(info.object?.id ?? null)
         },
-        updateTriggers: { getFillColor: [suggestions], getLineColor: [suggestions] },
+        updateTriggers: { getFillColor: [selectedId], getLineColor: [selectedId] },
+      }),
+    )
+  }
+
+  // ── Existing suggestions — ring-only circles (grey) ───────────────────
+  if (existingSuggestions.length > 0) {
+    layers.push(
+      new ScatterplotLayer<CouncilSuggestion>({
+        id: 'council-existing-circles',
+        data: existingSuggestions,
+        getPosition: (s) => centroidOf(s.geometry),
+        getRadius: (s) => Math.min(s.implementations[0]?.radiusM ?? 200, 600),
+        getFillColor: [80, 80, 90, 30],
+        getLineColor: [160, 160, 170, 220],
+        stroked: true,
+        filled: true,
+        lineWidthMinPixels: 2.5,
+        radiusUnits: 'meters',
+        pickable: true,
+        onClick: (info) => {
+          if (info.object && onSuggestionClick) {
+            onSuggestionClick(info.object.id)
+            return true
+          }
+        },
+        onHover: (info) => {
+          onSuggestionHover?.(info.object?.id ?? null)
+        },
       }),
     )
   }
@@ -97,7 +132,7 @@ export function createCouncilSuggestionLayers(
         getFillColor: SUGGESTION_COLORS.housing,
         getLineColor: SUGGESTION_STROKE_COLORS.housing,
         lineWidthMinPixels: 1,
-        parameters: { depthTest: true },
+        parameters: { depthTest: false, depthMask: false },
       }),
     )
   }

@@ -70,6 +70,12 @@ interface SiteStore {
   /** Amenity selected by clicking a row in the connectivity panel. Drives map flyTo + marker. */
   selectedAmenity: NearbyAmenity | null
   setSelectedAmenity: (amenity: NearbyAmenity | null) => void
+
+  /** OSRM-routed walking path coordinates for the selected amenity. Null = not yet fetched / use straight line. */
+  amenityRoute: [number, number][] | null
+  /** Actual routed walking distance in metres (may differ from crow-flies distanceM on the amenity). */
+  amenityRouteDistanceM: number | null
+  setAmenityRoute: (route: [number, number][] | null, distanceM: number | null) => void
 }
 
 const DEFAULT_LOADING: SiteLoadingStates = {
@@ -94,6 +100,8 @@ export const useSiteStore = create<SiteStore>((set) => ({
   hoveredPrecedentId: null,
   selectedPrecedentId: null,
   selectedAmenity: null,
+  amenityRoute: null,
+  amenityRouteDistanceM: null,
 
   initialiseSiteContext: (siteId, siteGeometry) =>
     set({
@@ -123,6 +131,8 @@ export const useSiteStore = create<SiteStore>((set) => ({
       hoveredPrecedentId: null,
       selectedPrecedentId: null,
       selectedAmenity: null,
+      amenityRoute: null,
+      amenityRouteDistanceM: null,
     }),
 
   updateSiteContext: (partial) =>
@@ -147,6 +157,8 @@ export const useSiteStore = create<SiteStore>((set) => ({
       hoveredPrecedentId: null,
       selectedPrecedentId: null,
       selectedAmenity: null,
+      amenityRoute: null,
+      amenityRouteDistanceM: null,
     }),
 
   setLoading: (source, loading) =>
@@ -174,4 +186,5 @@ export const useSiteStore = create<SiteStore>((set) => ({
   setHoveredPrecedentId: (id) => set({ hoveredPrecedentId: id }),
   setSelectedPrecedentId: (id) => set({ selectedPrecedentId: id }),
   setSelectedAmenity: (amenity) => set({ selectedAmenity: amenity }),
+  setAmenityRoute: (route, distanceM) => set({ amenityRoute: route, amenityRouteDistanceM: distanceM }),
 }))

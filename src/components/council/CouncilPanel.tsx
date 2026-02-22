@@ -9,7 +9,7 @@ interface CouncilPanelProps {
 }
 
 export function CouncilPanel({ onFlyTo }: CouncilPanelProps) {
-  const { stages, suggestions, isAnalysing, currentStageNum } = useCouncilStore()
+  const { stages, suggestions, isAnalysing, currentStageNum, cachedAt } = useCouncilStore()
 
   const completedStages = stages.filter((s) => s.status === 'complete').length
 
@@ -40,8 +40,16 @@ export function CouncilPanel({ onFlyTo }: CouncilPanelProps) {
           />
         </div>
 
-        {/* Current stage indicator */}
-        {isAnalysing && currentStageName && (
+        {/* Current stage indicator / cache notice */}
+        {isAnalysing && cachedAt && (
+          <p className="mt-1.5 text-[11px] text-amber-500/70 flex items-center gap-1.5">
+            <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <circle cx="12" cy="12" r="10" /><path strokeLinecap="round" d="M12 6v6l4 2" />
+            </svg>
+            Using cached analysis from {new Date(cachedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+          </p>
+        )}
+        {isAnalysing && !cachedAt && currentStageName && (
           <p className="mt-1.5 text-[11px] text-indigo-400 flex items-center gap-1.5">
             <span className="block w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse shrink-0" />
             {currentStageName}

@@ -117,6 +117,11 @@ export function PrecedentList() {
     return db.localeCompare(da);
   });
 
+  // Approval rate from nearby precedents only — more site-specific than borough IBEX stat.
+  // Require ≥3 decided applications to avoid misleading signals from tiny samples.
+  const decidedCount = approvedCount + refusedCount;
+  const localApprovalRate = decidedCount >= 3 ? approvedCount / decidedCount : null;
+
   return (
     <SectionCard
       title="Site Applications"
@@ -151,7 +156,7 @@ export function PrecedentList() {
       expanded={expanded}
       onToggle={() => setExpanded((e) => !e)}
     >
-      <ApprovalSignal rate={siteContext?.planningContextStats?.approval_rate ?? null} />
+      <ApprovalSignal rate={localApprovalRate} />
       <div ref={listRef} className="space-y-2 mt-2 max-h-80 overflow-y-auto pr-1">
         {sorted.map((feature, idx) => {
           const p = feature.properties ?? {};
@@ -257,7 +262,7 @@ function ApprovalSignal({ rate }: { rate: number | null }) {
     <div className={`flex items-center gap-2 mt-2 mb-1 px-2.5 py-1.5 rounded-md border text-xs ${classes}`}>
       <span className={`w-2 h-2 rounded-full shrink-0 ${dot}`} />
       <span className="font-medium">{label}</span>
-      <span className="ml-auto opacity-60">{(rate * 100).toFixed(0)}% approval rate</span>
+      <span className="ml-auto opacity-60">{(rate * 100).toFixed(0)}% nearby</span>
     </div>
   );
 }

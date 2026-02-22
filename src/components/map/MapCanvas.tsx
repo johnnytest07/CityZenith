@@ -9,7 +9,12 @@ import Map, {
 } from "react-map-gl/maplibre";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { PolygonLayer, GeoJsonLayer, ScatterplotLayer, PathLayer } from "@deck.gl/layers";
+import {
+  PolygonLayer,
+  GeoJsonLayer,
+  ScatterplotLayer,
+  PathLayer,
+} from "@deck.gl/layers";
 import { DeckOverlay } from "./DeckOverlay";
 import { useSiteStore } from "@/stores/siteStore";
 import { useMapStore } from "@/stores/mapStore";
@@ -31,6 +36,9 @@ import {
   calculatePolygonCentroid,
   hasRoadAccess,
 } from "@/lib/buildValidation";
+import { useProjectStore } from "@/stores/projectStore";
+import { area as turfAreaFn } from "@turf/turf";
+import type { ProjectBuilding } from "@/types/project";
 import type { Layer, PickingInfo } from "@deck.gl/core";
 
 const MAPTILER_KEY = process.env.NEXT_PUBLIC_MAPTILER_KEY ?? "";
@@ -65,14 +73,19 @@ function getPrecedentCenter(feature: GeoJSON.Feature): [number, number] | null {
 }
 
 /** Extract the [lng, lat] centroid of a GeoJSON Geometry. */
-function getSiteGeometryCentre(geometry: GeoJSON.Geometry): [number, number] | null {
+function getSiteGeometryCentre(
+  geometry: GeoJSON.Geometry,
+): [number, number] | null {
   if (geometry.type === "Polygon" && geometry.coordinates[0].length > 0) {
     const ring = geometry.coordinates[0] as [number, number][];
     const lng = ring.reduce((s, c) => s + c[0], 0) / ring.length;
     const lat = ring.reduce((s, c) => s + c[1], 0) / ring.length;
     return [lng, lat];
   }
-  if (geometry.type === "MultiPolygon" && geometry.coordinates[0]?.[0]?.length > 0) {
+  if (
+    geometry.type === "MultiPolygon" &&
+    geometry.coordinates[0]?.[0]?.length > 0
+  ) {
     const ring = geometry.coordinates[0][0] as [number, number][];
     const lng = ring.reduce((s, c) => s + c[0], 0) / ring.length;
     const lat = ring.reduce((s, c) => s + c[1], 0) / ring.length;
@@ -262,7 +275,14 @@ async function addCouncilBoundaries(
 
 export function MapCanvas() {
   const mapRef = useRef<MapRef>(null);
-  const { viewState, setViewState, setBounds, marketValueEnabled, bounds, setMarketValueLoading } = useMapStore();
+  const {
+    viewState,
+    setViewState,
+    setBounds,
+    marketValueEnabled,
+    bounds,
+    setMarketValueLoading,
+  } = useMapStore();
   const {
     siteContext,
     insight,
@@ -271,6 +291,7 @@ export function MapCanvas() {
     selectedPrecedentId,
     setSelectedPrecedentId,
     selectedAmenity,
+    amenityRoute,
   } = useSiteStore();
   const {
     buildMode,
@@ -292,10 +313,23 @@ export function MapCanvas() {
     setHoverInfo,
   } = useDevStore();
 
+  const {
+    projectMode,
+    projectStep,
+    selectedBuilding,
+    setProjectStep,
+    setSelectedBuilding,
+    setProjectResult,
+    setProjectError,
+  } = useProjectStore();
+
   const mapLibreRef = useRef<MapLibreMap | null>(null);
 
-  const { hexData: marketHexData, loading: marketValueLoading } = useMarketValue(marketValueEnabled, bounds);
-  useEffect(() => { setMarketValueLoading(marketValueLoading); }, [marketValueLoading, setMarketValueLoading]);
+  const { hexData: marketHexData, loading: marketValueLoading } =
+    useMarketValue(marketValueEnabled, bounds);
+  useEffect(() => {
+    setMarketValueLoading(marketValueLoading);
+  }, [marketValueLoading, setMarketValueLoading]);
 
   const { selectSite } = useSiteSelection(mapLibreRef);
   const { role, council, isIdentified } = useIdentityStore();
@@ -323,7 +357,9 @@ export function MapCanvas() {
       // overlay source still contains building footprint data. Fall back to the
       // first vector source found in the style.
       const existingBuildingLayer = styleLayers.find(
-        (l) => "source-layer" in l && (l as { "source-layer": string })["source-layer"] === "building",
+        (l) =>
+          "source-layer" in l &&
+          (l as { "source-layer": string })["source-layer"] === "building",
       ) as { source: string } | undefined;
 
       let buildingSource: string | undefined = existingBuildingLayer?.source;
@@ -400,7 +436,13 @@ export function MapCanvas() {
     const identityState = useIdentityStore.getState();
     if (identityState.isIdentified && identityState.council?.bounds) {
       const [w, s, e, n] = identityState.council.bounds;
-      (map as unknown as MapLibreMap).fitBounds([[w, s], [e, n]], { padding: 80, duration: 1200 });
+      (map as unknown as MapLibreMap).fitBounds(
+        [
+          [w, s],
+          [e, n],
+        ],
+        { padding: 80, duration: 1200 },
+      );
     }
   }, []);
 
@@ -425,7 +467,13 @@ export function MapCanvas() {
     const map = mapLibreRef.current;
     if (!map) return;
     const [w, s, e, n] = council.bounds;
-    map.fitBounds([[w, s], [e, n]], { padding: 80, duration: 1500 });
+    map.fitBounds(
+      [
+        [w, s],
+        [e, n],
+      ],
+      { padding: 80, duration: 1500 },
+    );
   }, [isIdentified, council?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fly to selected amenity location when the user clicks a connectivity row
@@ -439,6 +487,80 @@ export function MapCanvas() {
       duration: 900,
     });
   }, [selectedAmenity]);
+
+  // Highlight the building being analysed in Plan Project mode.
+  // Shows an orange glow+outline while loading and keeps it visible on result.
+  useEffect(() => {
+    const map = mapLibreRef.current;
+    if (!map) return;
+
+    const GLOW_LAYER = "project-building-glow";
+    const EDGE_LAYER = "project-building-edge";
+    const HIGHLIGHT_SRC = "project-building-highlight";
+
+    const showHighlight =
+      projectMode &&
+      (projectStep === "loading" || projectStep === "result") &&
+      selectedBuilding?.geometry != null;
+
+    const cleanup = () => {
+      if (map.getLayer(EDGE_LAYER)) map.removeLayer(EDGE_LAYER);
+      if (map.getLayer(GLOW_LAYER)) map.removeLayer(GLOW_LAYER);
+      if (map.getSource(HIGHLIGHT_SRC)) map.removeSource(HIGHLIGHT_SRC);
+    };
+
+    if (!showHighlight) {
+      cleanup();
+      return;
+    }
+
+    const geojson: GeoJSON.FeatureCollection = {
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          geometry: selectedBuilding!.geometry!,
+          properties: {},
+        },
+      ],
+    };
+
+    try {
+      if (map.getSource(HIGHLIGHT_SRC)) {
+        (map.getSource(HIGHLIGHT_SRC) as unknown as { setData(d: unknown): void }).setData(
+          geojson,
+        );
+      } else {
+        map.addSource(HIGHLIGHT_SRC, { type: "geojson", data: geojson });
+        // Soft orange glow behind the crisp edge
+        map.addLayer({
+          id: GLOW_LAYER,
+          type: "line",
+          source: HIGHLIGHT_SRC,
+          paint: {
+            "line-color": "#fb923c",
+            "line-width": 10,
+            "line-blur": 8,
+            "line-opacity": 0.45,
+          },
+        });
+        map.addLayer({
+          id: EDGE_LAYER,
+          type: "line",
+          source: HIGHLIGHT_SRC,
+          paint: {
+            "line-color": "#fb923c",
+            "line-width": 2.5,
+            "line-opacity": 0.95,
+          },
+        });
+      }
+    } catch {
+      /* map not ready or layer already added */
+    }
+
+    return cleanup;
+  }, [projectMode, projectStep, selectedBuilding]);
 
   const handleMove = useCallback(
     (evt: ViewStateChangeEvent) => {
@@ -487,10 +609,10 @@ export function MapCanvas() {
       const areaM2 = calculatePolygonArea(nodes);
       const centroidCoords = calculatePolygonCentroid(nodes);
 
-      // Road access check at centroid (non-blocking — warns but does not prevent)
+      // Road access check — tests every polygon vertex + centroid within 30m geographic radius
       const map = mapLibreRef.current;
       if (map) {
-        setRoadWarning(!hasRoadAccess(map, centroidCoords));
+        setRoadWarning(!hasRoadAccess(map, nodes));
       }
 
       completePolygon(closedRing, areaM2);
@@ -550,8 +672,108 @@ export function MapCanvas() {
       // Suggestion polygon clicks are handled by the deck.gl layer onClick (which returns true
       // to stop propagation, so this handler won't fire for those clicks).
       if (useIdentityStore.getState().role === "council") {
-        useCouncilStore.getState().setSelectedSuggestion(null)
-        return
+        useCouncilStore.getState().setSelectedSuggestion(null);
+        return;
+      }
+
+      // Project planning mode intercept — fires only when awaiting a building click
+      {
+        const ps = useProjectStore.getState();
+        if (ps.projectMode && ps.projectStep === "awaiting-click") {
+          const map = mapLibreRef.current;
+          if (!map) return;
+          const pt = map.project(clickPoint);
+          const hits = map.queryRenderedFeatures(
+            [
+              [pt.x - 4, pt.y - 4],
+              [pt.x + 4, pt.y + 4],
+            ],
+            { layers: ["3d-buildings"] },
+          );
+          if (hits.length === 0) return; // miss — let user try again
+          const feat = hits[0];
+          const props = feat.properties ?? {};
+          const rawH =
+            props.render_height ?? props.height ?? props.building_height;
+          const heightM =
+            typeof rawH === "number"
+              ? rawH
+              : typeof rawH === "string"
+                ? parseFloat(rawH) || null
+                : null;
+          let footprintM2: number | null = null;
+          try {
+            footprintM2 = Math.round(turfAreaFn(feat as GeoJSON.Feature));
+          } catch {}
+          const building: ProjectBuilding = {
+            heightM,
+            buildingType:
+              typeof props.building === "string" && props.building !== "yes"
+                ? props.building
+                : null,
+            buildingUse:
+              typeof props["building:use"] === "string"
+                ? props["building:use"]
+                : null,
+            impliedStoreys:
+              heightM != null ? Math.max(1, Math.round(heightM / 3)) : null,
+            lngLat: clickPoint,
+            footprintM2,
+            rawProperties: { ...props },
+            geometry: feat.geometry ?? null,
+          };
+          setSelectedBuilding(building);
+          setProjectStep("loading");
+          const sc = useSiteStore.getState().siteContext;
+          const body = JSON.stringify({
+            projectType: ps.projectType,
+            building,
+            ...(sc ? { siteContext: sc } : {}),
+          });
+          const [approvalRes, financialsRes] = await Promise.allSettled([
+            fetch("/api/approval-likelihood", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body,
+            }).then(async (r) => {
+              const d = await r.json();
+              if (!r.ok) throw new Error(d.error ?? "API error");
+              return d;
+            }),
+            fetch("/api/project-financials", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body,
+            }).then(async (r) => {
+              const d = await r.json();
+              if (!r.ok) throw new Error(d.error ?? "API error");
+              return d;
+            }),
+          ]);
+          const approval =
+            approvalRes.status === "fulfilled" ? approvalRes.value : null;
+          const financials =
+            financialsRes.status === "fulfilled" ? financialsRes.value : null;
+          if (!approval && !financials) {
+            setProjectError(
+              "Both analysis APIs failed — try clicking the building again",
+            );
+            return;
+          }
+          setProjectResult({
+            approval,
+            financials,
+            approvalError:
+              approvalRes.status === "rejected"
+                ? String(approvalRes.reason)
+                : undefined,
+            financialsError:
+              financialsRes.status === "rejected"
+                ? String(financialsRes.reason)
+                : undefined,
+          });
+          return;
+        }
       }
 
       // Read live state from store to avoid stale closure
@@ -583,7 +805,15 @@ export function MapCanvas() {
 
       selectSite(clickPoint);
     },
-    [selectSite, addPolygonNode, finishPolygon],
+    [
+      selectSite,
+      addPolygonNode,
+      finishPolygon,
+      setSelectedBuilding,
+      setProjectStep,
+      setProjectResult,
+      setProjectError,
+    ],
   );
 
   const getTooltip = useCallback(
@@ -594,17 +824,20 @@ export function MapCanvas() {
       // Proposed building — hover card handles display; suppress deck.gl tooltip
       if (layerId === "proposed-building") return null;
 
-      // ── Council suggestion area ──────────────────────────────────
-      if (layerId === "council-suggestions-area") {
-        const props = (info.object as GeoJSON.Feature).properties ?? {};
-        const rationale: string = props.rationale ?? "";
-        const title: string = props.title ?? "";
-        if (!rationale && !title) return null;
+      // ── Council suggestion circles ───────────────────────────────
+      if (
+        layerId === "council-proposed-circles" ||
+        layerId === "council-existing-circles"
+      ) {
+        const s = info.object as import("@/types/council").CouncilSuggestion;
+        if (!s?.title && !s?.rationale) return null;
+        const isExisting = s.status === "existing";
         return {
           html: `
           <div style="font-family:system-ui;font-size:11px;color:#e4e4e7;line-height:1.5">
-            <div style="font-weight:700;color:#a78bfa;margin-bottom:4px">${title}</div>
-            <div>${rationale}</div>
+            <div style="font-weight:700;color:#a78bfa;margin-bottom:4px">${s.title ?? ""}</div>
+            ${isExisting ? '<div style="color:#6b7280;font-size:10px;margin-bottom:4px">Existing</div>' : ""}
+            <div>${s.rationale ?? ""}</div>
           </div>`,
           style: {
             background: "rgba(15,15,25,0.92)",
@@ -621,26 +854,50 @@ export function MapCanvas() {
       if (layerId === "market-value-hex") {
         const props = (info.object as GeoJSON.Feature).properties;
         if (!props?.relativeScore) return null;
-        const { medianPrice, relativeScore, txCount, growth1yr, growth3yr } = props as {
-          medianPrice: number;
-          relativeScore: number;
-          txCount: number;
-          growth1yr: number | null;
-          growth3yr: number | null;
-        };
-        const pct = (v: number) => `${v >= 0 ? "+" : ""}${(v * 100).toFixed(0)}%`;
+        const { medianPrice, relativeScore, txCount, growth1yr, growth3yr } =
+          props as {
+            medianPrice: number;
+            relativeScore: number;
+            txCount: number;
+            growth1yr: number | null;
+            growth3yr: number | null;
+          };
+        const pct = (v: number) =>
+          `${v >= 0 ? "+" : ""}${(v * 100).toFixed(0)}%`;
         const fmt = (v: number) =>
           `£${v.toLocaleString("en-GB", { maximumFractionDigits: 0 })}`;
+        const scoreLabel =
+          relativeScore < -0.3
+            ? "Well below median"
+            : relativeScore < -0.1
+              ? "Below median"
+              : relativeScore <= 0.1
+                ? "Near median"
+                : relativeScore <= 0.3
+                  ? "Above median"
+                  : "Premium";
+        const scoreColor =
+          relativeScore < -0.1
+            ? "#60a5fa"
+            : relativeScore <= 0.1
+              ? "#9ca3af"
+              : relativeScore <= 0.3
+                ? "#fb923c"
+                : "#f87171";
         return {
-          html: `<div style="background:rgba(17,24,39,0.92);border:1px solid rgba(75,85,99,0.6);border-radius:8px;padding:10px 12px;font-family:system-ui;font-size:12px;line-height:1.6;color:#e5e7eb;min-width:180px">
-            <div style="font-weight:700;margin-bottom:4px">Market Value</div>
-            <div>Median Price (250m): <b>${fmt(medianPrice)}</b></div>
-            <div>vs Borough Median: <b style="color:${relativeScore < 0 ? "#60a5fa" : "#fb923c"}">${pct(relativeScore)}</b></div>
-            ${growth1yr != null ? `<div>1yr Growth: <b>${pct(growth1yr)}</b></div>` : ""}
-            ${growth3yr != null ? `<div>3yr Growth: <b>${pct(growth3yr)}</b></div>` : ""}
-            <div style="color:#6b7280;margin-top:4px">${txCount} transactions</div>
+          html: `<div style="background:rgba(12,15,28,0.95);border:1px solid rgba(75,85,99,0.5);border-radius:10px;padding:11px 13px;font-family:system-ui;font-size:12px;line-height:1.65;color:#e5e7eb;min-width:195px">
+            <div style="font-weight:700;margin-bottom:2px">Market Value</div>
+            <div style="font-size:10px;color:#6b7280;margin-bottom:8px">HMLR transactions · 250 m hex</div>
+            <div style="margin-bottom:3px">Median price: <b style="color:#f3f4f6">${fmt(medianPrice)}</b></div>
+            <div style="margin-bottom:6px">vs borough median: <b style="color:${scoreColor}">${pct(relativeScore)}</b> <span style="color:${scoreColor};font-size:11px">${scoreLabel}</span></div>
+            ${growth1yr != null ? `<div style="margin-bottom:2px">1-yr price change: <b style="color:${growth1yr >= 0 ? "#4ade80" : "#f87171"}">${pct(growth1yr)}</b></div>` : ""}
+            ${growth3yr != null ? `<div style="margin-bottom:6px">3-yr price change: <b style="color:${growth3yr >= 0 ? "#4ade80" : "#f87171"}">${pct(growth3yr)}</b></div>` : ""}
+            <div style="font-size:10px;color:#4b5563;border-top:1px solid rgba(75,85,99,0.4);padding-top:6px;margin-top:2px">${txCount} sales recorded · height = relative price</div>
           </div>`,
-          style: { background: "none", border: "none", padding: "0" } as Record<string, string>,
+          style: { background: "none", border: "none", padding: "0" } as Record<
+            string,
+            string
+          >,
         };
       }
 
@@ -657,39 +914,13 @@ export function MapCanvas() {
         const proposal: string = (p.proposal ?? "").slice(0, 120);
         const date: string = p.decided_date ?? "";
 
-        // ── Z-debug ──────────────────────────────────────────────
-        // Each slot has a fixed base polygonOffset + per-feature step.
-        // Draw order: undetermined (1st) → approved (2nd) → refused (3rd/top).
-        // Higher units offset = drawn later = visually on top when depthTest:false.
-        const slot = layerId.replace("planning-precedent-", "");
-        const SLOT_BASE_OFFSETS: Record<string, [number, number]> = {
-          undetermined: [0, 0],
-          approved: [-2, -500],
-          refused: [-4, -1000],
-        };
-        const SLOT_DRAW_ORDER: Record<string, string> = {
-          undetermined: "1st — bottommost",
-          approved: "2nd",
-          refused: "3rd — topmost (drawn last)",
-        };
-        const [bFactor, bUnits] = SLOT_BASE_OFFSETS[slot] ?? [0, 0];
-        const drawOrder = SLOT_DRAW_ORDER[slot] ?? "unknown";
-        const geomSource = p.geometrySource ?? "unknown";
-
         return {
           html: `
           <div style="font-family:system-ui;font-size:11px;color:#e4e4e7;line-height:1.5">
             <div style="font-weight:700;color:${decisionColor};margin-bottom:4px">${decision}</div>
             <div style="color:#a1a1aa;margin-bottom:2px">${p.planning_reference ?? ""}</div>
             <div style="margin-bottom:4px">${proposal}${(p.proposal ?? "").length > 120 ? "…" : ""}</div>
-            ${date ? `<div style="color:#71717a;margin-bottom:6px">${String(date).slice(0, 10)}</div>` : ""}
-            <div style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(99,102,241,0.25)">
-              <div style="color:#6366f1;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px">⬛ z-index debug</div>
-              <div style="color:#818cf8;margin-bottom:2px">layer: <span style="color:#a5b4fc">${layerId}</span></div>
-              <div style="color:#818cf8;margin-bottom:2px">draw order: <span style="color:#a5b4fc">${drawOrder}</span></div>
-              <div style="color:#818cf8;margin-bottom:2px">polygonOffset: <span style="color:#a5b4fc">factor ${bFactor}, units ${bUnits}</span></div>
-              <div style="color:#818cf8">geometry: <span style="color:#a5b4fc">${geomSource}</span></div>
-            </div>
+            ${date ? `<div style="color:#71717a">${String(date).slice(0, 10)}</div>` : ""}
           </div>`,
           style: {
             background: "rgba(9,9,19,0.96)",
@@ -745,7 +976,8 @@ export function MapCanvas() {
             councilSuggestions,
             selectedSuggestionId,
             hoveredSuggestionId,
-            (id) => setSelectedSuggestion(selectedSuggestionId === id ? null : id),
+            (id) =>
+              setSelectedSuggestion(selectedSuggestionId === id ? null : id),
             (id) => setHoveredSuggestion(id),
           ),
         );
@@ -771,7 +1003,9 @@ export function MapCanvas() {
         ...createPlanningPrecedentLayer(
           siteContext.planningPrecedentFeatures,
           (feature) => {
-            const ref = feature.properties?.planning_reference as string | undefined;
+            const ref = feature.properties?.planning_reference as
+              | string
+              | undefined;
             if (ref) setSelectedPrecedentId(ref);
           },
         ),
@@ -841,10 +1075,21 @@ export function MapCanvas() {
       const activeOption =
         activeIndex === 0 ? primary : alternatives[activeIndex - 1];
       if (activeOption) {
+        const LIKELIHOOD_COLOR: Record<
+          string,
+          [number, number, number, number]
+        > = {
+          high: [74, 222, 128, 200], // green-400
+          medium: [251, 191, 36, 200], // amber-400
+          low: [248, 113, 113, 200], // red-400
+        };
+        const buildingColor =
+          LIKELIHOOD_COLOR[activeOption.likelihood ?? "medium"];
         layers.push(
           createProposedBuildingLayer(
             buildPolygon,
             activeOption.approxHeightM,
+            buildingColor,
             (info: PickingInfo) => {
               if (info.picked) {
                 setHoverInfo({ x: info.x, y: info.y });
@@ -860,21 +1105,20 @@ export function MapCanvas() {
     // --- Amenity marker + path line ---
     if (selectedAmenity) {
       const siteCentre = getSiteGeometryCentre(siteContext.siteGeometry);
-      if (siteCentre) {
+      // Use OSRM-routed path when available; fall back to straight line while fetching
+      const pathCoords: [number, number][] | null = amenityRoute
+        ? amenityRoute
+        : siteCentre
+          ? [siteCentre, [selectedAmenity.lng, selectedAmenity.lat]]
+          : null;
+      if (pathCoords) {
         layers.push(
           new PathLayer({
             id: "amenity-path",
-            data: [
-              {
-                path: [
-                  siteCentre,
-                  [selectedAmenity.lng, selectedAmenity.lat] as [number, number],
-                ],
-              },
-            ],
+            data: [{ path: pathCoords }],
             getPath: (d: { path: [number, number][] }) => d.path,
-            getColor: [139, 92, 246, 110],
-            getWidth: 2,
+            getColor: amenityRoute ? [139, 92, 246, 180] : [139, 92, 246, 80],
+            getWidth: amenityRoute ? 3 : 2,
             widthUnits: "pixels",
             pickable: false,
             parameters: { depthTest: false },
@@ -912,6 +1156,7 @@ export function MapCanvas() {
     setHoverInfo,
     hoveredPrecedentId,
     selectedAmenity,
+    amenityRoute,
     marketValueEnabled,
     marketHexData,
     role,
@@ -934,12 +1179,14 @@ export function MapCanvas() {
     ? getPrecedentCenter(hoveredPrecedentFeature)
     : null;
 
-  const isBuildPlacing = buildMode === "new" && buildStep === "place";
+  const isCursorCrosshair =
+    (buildMode === "new" && buildStep === "place") ||
+    (projectMode && projectStep === "awaiting-click");
 
   return (
     <div
       style={{ width: "100%", height: "100%", position: "relative" }}
-      className={isBuildPlacing ? "cursor-crosshair" : ""}
+      className={isCursorCrosshair ? "cursor-crosshair" : ""}
     >
       <Map
         ref={mapRef}

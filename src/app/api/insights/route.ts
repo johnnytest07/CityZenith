@@ -1,91 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import OpenAI from 'openai'
 import type { SiteContext, InsightCategory } from '@/types/siteContext'
 import type { InsightsReport, InsightItem, InsightPriority } from '@/types/insights'
 import { serialiseSiteContext, type SerialisedSiteContext } from '@/lib/serialiseSiteContext'
+import { queryLocalPlan, type PlanChunkResult } from '@/lib/queryLocalPlan'
+import { CONSTRAINT_LABELS } from '@/types/constraints'
 
-const GEMINI_BASE    = 'https://generativelanguage.googleapis.com/v1'
-const EMBED_MODEL    = 'text-embedding-3-small'
-const GEMINI_MODEL   = process.env.GEMINI_MODEL ?? 'gemini-2.5-pro'
-const MONGO_DB       = process.env.MONGODB_DB ?? 'cityzenith'
-const PLAN_COLLECTION   = 'council_plan_chunks'
-const VECTOR_INDEX_NAME = 'vector_index'
-
-// ─── Local plan retrieval ─────────────────────────────────────────────────────
-
-interface PlanChunkResult {
-  section:     string
-  sectionType: string
-  text:        string
-  pageStart:   number
-  score:       number
-}
-
-async function embedQueryText(text: string, openai: any): Promise<number[]> {
-  const t0 = Date.now()
-  const res = await openai.embeddings.create({
-    model: EMBED_MODEL,
-    input: text,
-  })
-  const t1 = Date.now()
-  try {
-    console.log(`embedQueryText: generated embedding for ${String(text).slice(0, 60).replace(/\n/g, ' ')}... in ${t1 - t0}ms`)
-  } catch {}
-  return res.data[0].embedding
-}
-
-async function queryLocalPlan(
-  planCorpus: string,
-  queryText:  string,
-  openai:     any,
-  limit = 6,
-): Promise<PlanChunkResult[]> {
-  if (!process.env.MONGODB_URI) return []
-
-  try {
-    const clientPromise = (await import('@/lib/mongoClient')).default
-    const client = await clientPromise
-    const db = client.db(MONGO_DB)
-    const tEmbedStart = Date.now()
-    const queryVector = await embedQueryText(queryText, openai)
-    const tEmbedEnd = Date.now()
-    console.log(`queryLocalPlan: embedding for corpus=${planCorpus} took ${tEmbedEnd - tEmbedStart}ms`)
-
-    const tDbStart = Date.now()
-    const docs = await db.collection(PLAN_COLLECTION).aggregate([
-      {
-        $vectorSearch: {
-          index:         VECTOR_INDEX_NAME,
-          path:          'embedding',
-          queryVector,
-          numCandidates: limit * 10,
-          limit,
-          filter:        { council: planCorpus },
-        },
-      },
-      {
-        $project: {
-          _id:         0,
-          embedding:   0,
-          section:     1,
-          sectionType: 1,
-          text:        1,
-          pageStart:   1,
-          score:       { $meta: 'vectorSearchScore' },
-        },
-      },
-    ]).toArray()
-    const tDbEnd = Date.now()
-    try {
-      console.log(`queryLocalPlan: Mongo vectorSearch for corpus=${planCorpus} returned ${docs.length} docs in ${tDbEnd - tDbStart}ms`)
-    } catch {}
-
-    return docs as PlanChunkResult[]
-  } catch {
-    // MongoDB unavailable or index not built yet — continue without plan context
-    return []
-  }
-}
+const GEMINI_BASE  = 'https://generativelanguage.googleapis.com/v1'
+const GEMINI_MODEL = process.env.GEMINI_MODEL ?? 'gemini-2.5-pro'
 
 /** Build a plan search query from the site context evidence. */
 function buildPlanSearchQuery(summary: SerialisedSiteContext): string {
@@ -111,7 +32,7 @@ function buildPrompt(
 ): string {
   const constraintList = Object.entries(summary.constraints)
     .filter(([, active]) => active)
-    .map(([type]) => type)
+    .map(([type]) => CONSTRAINT_LABELS[type as keyof typeof CONSTRAINT_LABELS] ?? type)
     .join(', ') || 'none identified'
 
   // Filter out domestic/householder works — not relevant for site assessment
@@ -230,7 +151,8 @@ TASK ─────────────────────────
 Analyse this site thoroughly, then return a structured JSON insights report.
 
 For each insight: first think through the detailed evidence (this becomes "detail"),
-then distil it to a punchy headline (this becomes "headline").
+then write 1–2 plain-English sentences for "headline" — NOT a newspaper-style title.
+Bold 1–3 key data points (numbers, percentages, policy codes) using **double asterisks**.
 
 Return ONLY valid JSON — no markdown fences, no preamble, no trailing text:
 {
@@ -240,7 +162,7 @@ Return ONLY valid JSON — no markdown fences, no preamble, no trailing text:
       "id": "planning-1",
       "category": "planning",
       "priority": "high",
-      "headline": "Punchy headline, max 12 words",
+      "headline": "1–2 sentences, plain English, max ~25 words. Bold 1–3 key figures with **double asterisks**, e.g. 'The area has a **76% approval rate** for residential schemes, with one HMO refusal on record.'",
       "detail": "2–4 sentences of specific, evidence-grounded analysis. Reference actual application types, decisions, policies, or statistics.",
       "evidenceSources": ["IBEX planning data", "Local Plan Policy H1"]
     }
@@ -338,9 +260,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'GEMINI_API_KEY not configured', reqId }, { status: 503 })
   }
 
-  const openaiKey = process.env.OPENAI_API_KEY
-  const openai = openaiKey ? new OpenAI({ apiKey: openaiKey }) : null
-
   let siteContext: SiteContext
   let role:       'council' | 'developer' = 'developer'
   let council     = 'Unknown Council'
@@ -396,20 +315,17 @@ export async function POST(request: NextRequest) {
   // Query local plan if a corpus is available for this council
   let planChunks: PlanChunkResult[] = []
   let vectorSearchTimedOut = false
-  if (planCorpus && openai) {
+  if (planCorpus) {
     const searchQuery = buildPlanSearchQuery(summary)
     try {
       // Bound the vector search + embedding time so a slow DB or network doesn't block
-      planChunks = await withTimeout(queryLocalPlan(planCorpus, searchQuery, openai), 3500)
+      planChunks = await withTimeout(queryLocalPlan(planCorpus, searchQuery), 4000)
     } catch (err) {
       // On timeout or error, continue without plan context (non-fatal)
       console.warn(`[/api/insights req:${reqId}] Local plan vector search failed or timed out; continuing without plan context`, err)
-      // indicate to the client that the vector search did not complete
       vectorSearchTimedOut = true
       planChunks = []
     }
-  } else if (planCorpus && !openai) {
-    console.warn('OPENAI_API_KEY not set; skipping local plan vector search')
   }
 
   const prompt = buildPrompt(summary, role, council, planChunks)

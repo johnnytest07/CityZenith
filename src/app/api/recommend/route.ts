@@ -216,11 +216,12 @@ Return a JSON object with this exact structure — no markdown, no preamble:
     "storeys": <integer — match dominant local height unless you have strong planning reason not to>,
     "approxFootprintM2": ${roundedArea},
     "approxHeightM": <realistic height in metres from the table above — NOT storeys × 3>,
+    "likelihood": "high" | "medium" | "low",
     "reasoning": [
-      "<bullet 1: how this fits local street character — cite dominant storey count and avg height>",
-      "<bullet 2: planning evidence — approval rate, recent app types, activity level>",
-      "<bullet 3: any statutory constraints and their implication, or 'No active statutory constraints' if none>",
-      "<bullet 4: overall likelihood of success and key risk if any>"
+      "<≤15 words — local character fit — wrap key numbers in **double asterisks**, e.g. 'Matches **2-storey** streetscape; **7.0m** within median height range'>",
+      "<≤15 words — planning evidence — bold approval rate, e.g. 'Council **76%** approval; full-planning precedent on adjacent sites'>",
+      "<≤12 words — constraints or 'No constraints — clean planning path'>",
+      "<≤12 words — likelihood + one key risk, e.g. 'Likelihood: **high** — risk: limited context data'>"
     ],
     "factors": [
       { "label": "<≤20 chars>", "value": "<actual data value>", "impact": "positive" | "neutral" | "negative" },
@@ -230,18 +231,18 @@ Return a JSON object with this exact structure — no markdown, no preamble:
   "alternatives": [
     {
       ALTERNATIVE 1: A SHORTER / SMALLER option than primary (match or go below dominant local height)
-      "buildingType": "...", "style": "...", "storeys": ..., "approxFootprintM2": ${roundedArea}, "approxHeightM": ...,
-      "reasoning": ["<bullet 1>", "<bullet 2>", "<bullet 3>"], "factors": [...]
+      "buildingType": "...", "style": "...", "storeys": ..., "approxFootprintM2": ${roundedArea}, "approxHeightM": ..., "likelihood": "high"|"medium"|"low",
+      "reasoning": ["<≤15 words with **bold** numbers>", "<≤15 words>", "<≤12 words>"], "factors": [...]
     },
     {
       ALTERNATIVE 2: A TALLER / DENSER option (push the planning envelope — justify with precedent or approval rate)
-      "buildingType": "...", "style": "...", "storeys": ..., "approxFootprintM2": ${roundedArea}, "approxHeightM": ...,
-      "reasoning": ["<bullet 1>", "<bullet 2>", "<bullet 3>"], "factors": [...]
+      "buildingType": "...", "style": "...", "storeys": ..., "approxFootprintM2": ${roundedArea}, "approxHeightM": ..., "likelihood": "high"|"medium"|"low",
+      "reasoning": ["<≤15 words with **bold** numbers>", "<≤15 words>", "<≤12 words>"], "factors": [...]
     },
     {
       ALTERNATIVE 3: A DIFFERENT USE CLASS (mixed-use, commercial, live-work — must differ in building type, not just style)
-      "buildingType": "...", "style": "...", "storeys": ..., "approxFootprintM2": ${roundedArea}, "approxHeightM": ...,
-      "reasoning": ["<bullet 1>", "<bullet 2>", "<bullet 3>"], "factors": [...]
+      "buildingType": "...", "style": "...", "storeys": ..., "approxFootprintM2": ${roundedArea}, "approxHeightM": ..., "likelihood": "high"|"medium"|"low",
+      "reasoning": ["<≤15 words with **bold** numbers>", "<≤15 words>", "<≤12 words>"], "factors": [...]
     }
   ]
 }
@@ -360,6 +361,8 @@ export async function POST(request: NextRequest) {
         }
         // Normalise missing/malformed factors to an empty array rather than rejecting
         if (!Array.isArray(opt.factors)) opt.factors = []
+        // Normalise likelihood — default to 'medium' if missing or invalid
+        if (!['high', 'medium', 'low'].includes(opt.likelihood)) opt.likelihood = 'medium'
         return true
       }
 

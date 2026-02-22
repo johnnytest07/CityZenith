@@ -12,7 +12,7 @@ const DEFAULT_REGION = 'thamesmead-greenwich'
 const DEFAULT_BOUNDS: [number, number, number, number] = [0.07, 51.47, 0.17, 51.53]
 
 export function CouncilAskButton() {
-  const { isAnalysing, stages, suggestions, error, clearAnalysis } = useCouncilStore()
+  const { isAnalysing, stages, suggestions, error, clearAnalysis, cachedAt } = useCouncilStore()
   const { startCouncilAnalysis } = useCouncilAnalysis()
   const { council } = useIdentityStore()
   const { bounds } = useMapStore()
@@ -83,7 +83,7 @@ export function CouncilAskButton() {
             <span className="text-xs text-gray-500">{completedStages}/10 stages</span>
           </div>
 
-          <StageProgress stages={stages} />
+          <StageProgress stages={stages} cachedAt={cachedAt} />
         </div>
       )}
 

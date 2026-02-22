@@ -1,10 +1,9 @@
-import { getMongoCollection } from './store'
+import { fetchDocumentsByCouncil } from './store'
 import { createEmbedding } from './embed'
 
 export async function findSimilarDocuments(council: string, queryText: string, limit = 5): Promise<any[]> {
-  const collection = await getMongoCollection()
   const queryEmbedding = await createEmbedding(queryText)
-  const documents = await collection.find({ council }).toArray()
+  const documents = await fetchDocumentsByCouncil(council)
   if (documents.length === 0) return []
   const scored = documents.map((doc) => {
     let score = 0

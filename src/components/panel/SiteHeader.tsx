@@ -2,6 +2,7 @@
 
 import { useSiteStore } from '@/stores/siteStore'
 import { useDevStore } from '@/stores/devStore'
+import { useProjectStore } from '@/stores/projectStore'
 import { getCentroid } from '@/lib/geometry'
 
 export function SiteHeader() {
@@ -47,7 +48,10 @@ export function SiteHeader() {
 
         {/* Build New toggle */}
         <button
-          onClick={buildMode === 'off' ? activateBuildNew : deactivateBuild}
+          onClick={buildMode === 'off'
+            ? () => { useProjectStore.getState().deactivateProjectMode(); activateBuildNew() }
+            : deactivateBuild
+          }
           className={`mt-2 text-xs px-2.5 py-1 rounded font-medium transition-colors ${
             buildMode === 'new'
               ? 'bg-violet-700 text-white hover:bg-violet-600'
