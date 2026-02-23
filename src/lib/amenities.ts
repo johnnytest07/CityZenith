@@ -1,9 +1,13 @@
 import type { NearbyAmenity, AmenityCategory } from '@/types/amenities'
 
-const OVERPASS_URL = 'https://overpass-api.de/api/interpreter'
+export const OVERPASS_MIRRORS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
+]
 const OSRM_URL = 'https://router.project-osrm.org/table/v1/foot'
-const RADIUS_M = 1000
-const SUPERMARKET_RADIUS_M = 2500 // extend to find real supermarkets (Tesco, Sainsbury's etc.)
+export const RADIUS_M = 1000
+export const SUPERMARKET_RADIUS_M = 2500
 
 function haversineM(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000
@@ -167,7 +171,7 @@ function fallbackName(category: AmenityCategory): string {
   return names[category]
 }
 
-interface OverpassElement {
+export interface OverpassElement {
   type: string
   lat?: number
   lon?: number
@@ -175,17 +179,9 @@ interface OverpassElement {
   tags?: Record<string, string>
 }
 
-/**
- * Queries the Overpass API for amenities within 1km of the given point.
- * Returns amenities sorted by distance ascending, with lat/lng and subtype.
- */
-export async function fetchNearbyAmenities(
-  lat: number,
-  lng: number,
-  signal?: AbortSignal,
-): Promise<NearbyAmenity[]> {
-  console.log(`[amenities] fetchNearbyAmenities called — lat=${lat}, lng=${lng}`)
-  const query = `[out:json][timeout:25];
+/** Build the Overpass QL query string for the given location. */
+export function buildOverpassQuery(lat: number, lng: number): string {
+  return `[out:json][timeout:25];
 (
   node["amenity"="bus_stop"](around:${RADIUS_M},${lat},${lng});
   node["highway"="bus_stop"](around:${RADIUS_M},${lat},${lng});
@@ -212,55 +208,27 @@ export async function fetchNearbyAmenities(
   node["amenity"="pharmacy"](around:${RADIUS_M},${lat},${lng});
 );
 out center;`
+}
 
-  console.log(`[amenities] POSTing to Overpass (radius=${RADIUS_M}m, supermarket radius=${SUPERMARKET_RADIUS_M}m)`)
-  const res = await fetch(OVERPASS_URL, {
-    method: 'POST',
-    body: query,
-    headers: { 'Content-Type': 'text/plain' },
-    signal,
-  })
-
-  console.log(`[amenities] Overpass response: status=${res.status} ok=${res.ok}`)
-  if (!res.ok) throw new Error(`Overpass API error: ${res.status}`)
-
-  const data = await res.json() as { elements: OverpassElement[] }
-  console.log(`[amenities] Overpass returned ${data.elements.length} raw elements`)
-
+/** Process raw Overpass elements into NearbyAmenity[], sorted and deduped. */
+export function processOverpassElements(elements: OverpassElement[], lat: number, lng: number): NearbyAmenity[] {
   const amenities: NearbyAmenity[] = []
-  let skippedUnclassified = 0
-  let skippedNoCoords = 0
-  let skippedUnnamedPark = 0
-
-  for (const el of data.elements) {
+  for (const el of elements) {
     const tags = el.tags ?? {}
     const category = classifyTags(tags)
-    if (!category) { skippedUnclassified++; continue }
-
+    if (!category) continue
     const elLat = el.lat ?? el.center?.lat
     const elLng = el.lon ?? el.center?.lon
-    if (elLat == null || elLng == null) { skippedNoCoords++; continue }
-
-    // Skip unnamed parks — OSM often tags unnamed green patches that clutter the list
-    if (category === 'park' && !tags.name) { skippedUnnamedPark++; continue }
-
+    if (elLat == null || elLng == null) continue
+    if (category === 'park' && !tags.name) continue
     const distanceM = Math.round(haversineM(lat, lng, elLat, elLng))
     const name = tags.name ?? tags['name:en'] ?? fallbackName(category)
     const subtype = getSubtype(category, tags)
-
     amenities.push({ category, name, distanceM, subtype, lat: elLat, lng: elLng })
   }
-
-  console.log(`[amenities] classification: ${amenities.length} kept, ${skippedUnclassified} unclassified, ${skippedNoCoords} no-coords, ${skippedUnnamedPark} unnamed-park`)
-  if (amenities.length > 0) {
-    const byCategory: Record<string, number> = {}
-    for (const a of amenities) byCategory[a.category] = (byCategory[a.category] ?? 0) + 1
-    console.log('[amenities] by category:', byCategory)
-  }
-
-  // Sort by distance; deduplicate by name+category (OSM can have duplicate nodes)
+  // Sort + deduplicate
   const seen = new Set<string>()
-  const deduped = amenities
+  return amenities
     .sort((a, b) => a.distanceM - b.distanceM)
     .filter((a) => {
       const key = `${a.category}:${a.name.toLowerCase()}`
@@ -268,18 +236,38 @@ out center;`
       seen.add(key)
       return true
     })
+}
 
-  console.log(`[amenities] after dedup: ${deduped.length} amenities`)
-
-  // Enrich with road-routed walking distances via OSRM
-  return enrichWithRoadDistances([lng, lat], deduped)
+/**
+ * Fetches nearby amenities via the server-side /api/amenities proxy,
+ * which handles Overpass rate-limits and MongoDB caching.
+ */
+export async function fetchNearbyAmenities(
+  lat: number,
+  lng: number,
+  signal?: AbortSignal,
+): Promise<NearbyAmenity[]> {
+  console.log(`[amenities] fetchNearbyAmenities → /api/amenities lat=${lat} lng=${lng}`)
+  const res = await fetch('/api/amenities', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ lat, lng }),
+    signal,
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as { error?: string }
+    throw new Error(err.error ?? `Amenities API error: ${res.status}`)
+  }
+  const data = await res.json() as { amenities: NearbyAmenity[] }
+  console.log(`[amenities] received ${data.amenities.length} amenities from server`)
+  return data.amenities
 }
 
 /**
  * Replaces straight-line distanceM values with actual walking distances via
  * OSRM's public routing API (foot profile). Falls back to haversine on any error.
  */
-async function enrichWithRoadDistances(
+export async function enrichWithRoadDistances(
   from: [number, number],
   amenities: NearbyAmenity[],
 ): Promise<NearbyAmenity[]> {

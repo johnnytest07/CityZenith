@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import clientPromise from '@/lib/mongoClient'
 import type { SiteContext, InsightCategory } from '@/types/siteContext'
 import type { InsightsReport, InsightItem, InsightPriority, InsightSentiment } from '@/types/insights'
 import { serialiseSiteContext, type SerialisedSiteContext } from '@/lib/serialiseSiteContext'
@@ -6,7 +7,42 @@ import { queryLocalPlan, type PlanChunkResult } from '@/lib/queryLocalPlan'
 import { CONSTRAINT_LABELS } from '@/types/constraints'
 
 const GEMINI_BASE  = 'https://generativelanguage.googleapis.com/v1'
-const GEMINI_MODEL = process.env.GEMINI_MODEL ?? 'gemini-2.5-pro'
+const GEMINI_MODEL = 'gemini-2.5-flash'
+
+/** Round a coordinate to the nearest 0.01° grid cell. */
+function geoBucket(lat: number, lng: number): string {
+  const bLat = Math.round(lat / 0.01) * 0.01
+  const bLng = Math.round(lng / 0.01) * 0.01
+  return `${bLat.toFixed(2)}_${bLng.toFixed(2)}`
+}
+
+/** Compute the centroid of a GeoJSON Polygon's outer ring. Returns null if not a Polygon. */
+function polygonCentroid(geometry: GeoJSON.Geometry): { lat: number; lng: number } | null {
+  if (geometry.type !== 'Polygon') return null
+  const ring = geometry.coordinates[0] as [number, number][]
+  if (!ring || ring.length === 0) return null
+  const lng = ring.reduce((s, c) => s + c[0], 0) / ring.length
+  const lat = ring.reduce((s, c) => s + c[1], 0) / ring.length
+  return { lat, lng }
+}
+
+async function getCachedInsights(cacheKey: string) {
+  try {
+    const db = (await clientPromise).db(process.env.MONGODB_DB ?? 'cityzenith')
+    return await db.collection('insights_cache').findOne({ _id: cacheKey as any })
+  } catch { return null }
+}
+
+async function setCachedInsights(cacheKey: string, report: unknown) {
+  try {
+    const db = (await clientPromise).db(process.env.MONGODB_DB ?? 'cityzenith')
+    await db.collection('insights_cache').replaceOne(
+      { _id: cacheKey as any },
+      { _id: cacheKey, report, cachedAt: new Date() },
+      { upsert: true },
+    )
+  } catch { /* non-fatal */ }
+}
 
 /** Build a plan search query from the site context evidence. */
 function buildPlanSearchQuery(summary: SerialisedSiteContext): string {
@@ -317,6 +353,26 @@ export async function POST(request: NextRequest) {
 
   const summary = serialiseSiteContext(siteContext)
 
+  // ── Geo-bucket cache check ─────────────────────────────────────────────────
+  // If a result has already been generated for a site within ±0.01° of this
+  // one's centroid, return it instantly without calling Gemini.
+  const centroid = polygonCentroid(siteContext.siteGeometry as GeoJSON.Geometry)
+  const cacheKey = centroid ? `${role}_${geoBucket(centroid.lat, centroid.lng)}` : null
+
+  if (cacheKey) {
+    const cached = await getCachedInsights(cacheKey)
+    if (cached?.report) {
+      console.log(`[/api/insights req:${reqId}] cache hit for bucket ${cacheKey}`)
+      const report = cached.report as ReturnType<typeof parseInsightsReport>
+      const validCategories: InsightCategory[] = ['planning', 'constraints', 'built_form', 'council', 'connectivity']
+      const bullets = (report!.items as any[])
+        .filter((item) => validCategories.includes(item.category))
+        .map((item) => ({ category: item.category, text: item.headline }))
+      const raw = (report!.items as any[]).map((item) => `• ${item.headline}`).join('\n')
+      return NextResponse.json({ report, bullets, raw, fromCache: true, reqId })
+    }
+  }
+
   // Query local plan if a corpus is available for this council
   let planChunks: PlanChunkResult[] = []
   let vectorSearchTimedOut = false
@@ -395,6 +451,9 @@ export async function POST(request: NextRequest) {
       .filter((item) => validCategories.includes(item.category))
       .map((item) => ({ category: item.category, text: item.headline }))
     const raw = report.items.map((item) => `• ${item.headline}`).join('\n')
+
+    // Store in geo-bucket cache for future nearby requests
+    if (cacheKey) await setCachedInsights(cacheKey, report)
 
     console.log(`[/api/insights req:${reqId}] returning report with ${report.items.length} items`)
     return NextResponse.json({ report, bullets, raw, vectorSearchTimedOut, reqId })

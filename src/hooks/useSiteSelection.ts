@@ -91,6 +91,7 @@ export function useSiteSelection(mapRef: React.RefObject<MapLibreMap | null>) {
       const pipelineSignal = withTimeout(controller.signal, 30_000)
 
       // --- 7. Nearby amenities (Overpass API — runs in parallel) ---
+      console.log(`[selectSite] starting amenity fetch — lat=${lngLat[1].toFixed(6)} lng=${lngLat[0].toFixed(6)}`)
       fetchNearbyAmenities(lngLat[1], lngLat[0], amenitySignal)
         .then((nearbyAmenities) => {
           if (!isStale()) {

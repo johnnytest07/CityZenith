@@ -94,6 +94,7 @@ async function upsertStageResult(
       stageResults: [],
       updatedAt: new Date(),
     }
+    if (!Array.isArray(doc.stageResults)) doc.stageResults = []
     const entry: CachedStageResult = { stageNum, name, description, suggestions }
     const idx = doc.stageResults.findIndex((r) => r.stageNum === stageNum)
     if (idx >= 0) {
@@ -208,7 +209,7 @@ async function runStage(
   const prompt = `You are an AI planning intelligence system supporting ${council} council in England.
 
 Analysis region bounds: West=${w}, South=${s}, East=${e}, North=${n} (WGS84)
-This covers the Thamesmead and Greenwich area of South East London.
+This covers the ${council} local authority area.
 
 ${planContextSection}${previousSummary ? `Previous analysis stages have identified:\n${previousSummary}\n\n` : ''}
 
@@ -219,7 +220,7 @@ Generate only as many suggestions as genuine evidence warrants for this stage. *
 Each suggestion must:
 - Reference a real area within the bounds above
 - Have realistic, precise centerPoint coordinates within [${w},${s}] to [${e},${n}]
-- Include specific Local Plan policy references (e.g. "Royal Borough of Greenwich Local Plan Policy H2")
+- Include specific Local Plan policy references (e.g. "${council} Local Plan Policy H2")
 - Provide 3-5 paragraphs of detailed reasoning
 - Include 1-3 concrete implementation options where applicable
 
@@ -232,7 +233,7 @@ Respond ONLY with valid JSON matching this exact schema:
 {
   "suggestions": [
     {
-      "title": "string — specific area name (e.g. 'South Thamesmead Employment Land')",
+      "title": "string — specific area name within the ${council} authority area",
       "type": "one of: troubled_area|opportunity_zone|park|housing|bridge|community|mixed_use|transport",
       "status": "existing or proposed — existing = already built/approved/in-place; proposed = recommendation or gap requiring action",
       "rationale": "string — 1-2 sentence summary for map tooltip",

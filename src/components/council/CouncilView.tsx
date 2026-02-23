@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback } from 'react'
+import { useCallback, useEffect } from 'react'
 import { MapCanvas } from '@/components/map/MapCanvas'
 import { CouncilPanel } from './CouncilPanel'
 import { CouncilAskButton } from './CouncilAskButton'
@@ -18,14 +18,13 @@ import type { CouncilSuggestion } from '@/types/council'
  * └──────────────────────────────────┴──────────────┘
  */
 export function CouncilView() {
-  const { suggestions } = useCouncilStore()
+  const { suggestions, selectedSuggestionId } = useCouncilStore()
   const { setViewState } = useMapStore()
 
   const panelVisible = suggestions.length > 0
 
   const handleFlyTo = useCallback(
     (suggestion: CouncilSuggestion) => {
-      // Extract centroid from suggestion geometry
       if (suggestion.geometry.type === 'Polygon') {
         const ring = suggestion.geometry.coordinates[0] as [number, number][]
         if (ring.length > 0) {
@@ -37,6 +36,13 @@ export function CouncilView() {
     },
     [setViewState],
   )
+
+  // Fly to a suggestion whenever it becomes selected (map click or sidebar click)
+  useEffect(() => {
+    if (!selectedSuggestionId) return
+    const s = suggestions.find((s) => s.id === selectedSuggestionId)
+    if (s) handleFlyTo(s)
+  }, [selectedSuggestionId, suggestions, handleFlyTo])
 
   return (
     <div className="flex h-screen w-screen bg-gray-950 overflow-hidden">
@@ -50,7 +56,7 @@ export function CouncilView() {
       {/* Council panel — slides in after first suggestion */}
       {panelVisible && (
         <div className="w-96 shrink-0 overflow-hidden">
-          <CouncilPanel onFlyTo={handleFlyTo} />
+          <CouncilPanel />
         </div>
       )}
     </div>
